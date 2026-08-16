@@ -49,17 +49,15 @@ namespace F4Parkour
 	bool ParkourManager::ContextualIntent(RE::PlayerCharacter* a_player) const
 	{
 		auto* settings = Settings::GetSingleton();
-		// Forward input signals vault intent (momentum over the top).
-		// Two waivers: a mantle-only candidate (standing at a wall,
-		// facing it, jump IS the intent), and a near-standstill player
-		// at ANY mantle-eligible candidate — forward is only meaningful
-		// as vault intent, and DecideKind picks mantle at standstill
-		// anyway (SkyParkour: standstill jump at a ledge climbs it).
-		const bool mantleOnly = candidate.mantleEligible && !candidate.vaultEligible;
-		const bool standstillMantle = candidate.mantleEligible &&
-			Detection::HorizontalSpeed(a_player) < 60.0f;
+		// Forward input gates VAULT intent only. The old waiver list
+		// (mantle-only candidates, sub-60-speed standstill) kept missing
+		// cases — releasing W a beat before pressing jump left speed
+		// above the standstill threshold and the press fell through to a
+		// vanilla jump ("standing mantle randomly refuses"). DecideKind
+		// already picks Mantle exactly when momentum intent is absent,
+		// so that decision IS the gate.
 		if (settings->requireForward && !Detection::IsForwardHeld() &&
-			!mantleOnly && !standstillMantle) return false;
+			DecideKind(a_player) == MoveKind::Vault) return false;
 
 		// Look cone: the candidate must be roughly where the player faces.
 		if (candidate.IsValid()) {

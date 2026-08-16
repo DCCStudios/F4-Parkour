@@ -405,7 +405,12 @@ namespace
 		const RE::NiPoint3 upStart = { playerPos.x, playerPos.y, playerPos.z + Detection::kPlayerHeight };
 		const float wantedScanZ = playerPos.z + maxLedgeHeight + 15.0f;  // just above the tallest legal top
 		const float maxUpCheck = std::max(20.0f, wantedScanZ - upStart.z);
-		const float minUpCheck = 40.0f;
+		// Only a genuinely cramped space (crawl height right above the
+		// head) aborts the scan. The old 40u veto killed HIGH mantles at
+		// any building trim/eave/pipe hanging above the player, even
+		// though the arc rises FORWARD, not straight up - per-lip sky
+		// checks and apex-onward path validation own real clearance now.
+		const float minUpCheck = 15.0f;
 		Raycast::RayHit upRay{};
 		Raycast::CastDir(upStart, up, maxUpCheck, upRay);
 		DbgRay(upStart, up, maxUpCheck, upRay, !(upRay.hit && upRay.distance < minUpCheck), "mantle up");

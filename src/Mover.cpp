@@ -365,6 +365,8 @@ namespace F4Parkour
 
 		if (!ValidatePath(ledge)) {
 			DebugDraw::GetSingleton()->Event("activation aborted: path blocked");
+			logger::info("[Mover] Activation aborted: path blocked ({} height={:.0f})",
+				vault ? "vault" : "mantle", height);
 			return false;
 		}
 
@@ -453,8 +455,20 @@ namespace F4Parkour
 		// Sample the path and probe up (head) at each sample. Brink
 		// shipped with endpoint checks only; this is stricter and any
 		// solid hit vetoes activation.
+		//
+		// MANTLES validate only from the apex onward: the rising leg
+		// deliberately hugs (and, with kNoSim, passes through) the front
+		// face, and up-probes cast from inside that geometry return
+		// shape-dependent results — the same wall could pass or veto
+		// depending on its collision type, which read as "standing
+		// mantle randomly refuses". Detection has already proven lip
+		// sky, stand-point headroom, and behind-lip clearance for the
+		// on-top portion.
 		constexpr int kSamples = 8;
-		for (int i = 1; i < kSamples; ++i) {
+		const int firstSample = (kind == MoveKind::Mantle)
+			? std::max(1, static_cast<int>(apexS * static_cast<float>(kSamples)))
+			: 1;
+		for (int i = firstSample; i < kSamples; ++i) {
 			const float s = static_cast<float>(i) / kSamples;
 			const RE::NiPoint3 p = SamplePath(s);
 
