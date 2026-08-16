@@ -27,7 +27,7 @@ namespace
 	constexpr float kVaultLength = 100.0f;       // forward reach of the vault sweep
 	constexpr float kSweepStep = 5.0f;           // down-sweep spacing
 	constexpr int   kSweepIterations = 24;       // 120 units of forward coverage
-	constexpr int   kMantleFwdIterations = 24;   // 120 units of mantle coverage (tall sloped rocks hold their crest far forward)
+	constexpr int   kMantleFwdIterations = 40;   // 200 units of mantle coverage - a leaning rock at max height holds its crest far forward
 	constexpr float kMinLedgeFlatness = 0.5f;    // normal.z for a standable top
 
 	RE::NiPoint3 Add(const RE::NiPoint3& a, const RE::NiPoint3& b)
@@ -440,7 +440,7 @@ namespace
 		// attempts per scan to bound the ray budget.
 		const float downDist = (scanZ - playerPos.z) + 20.0f;
 		int heavyTries = 0;
-		constexpr int kMaxHeavyTries = 4;
+		constexpr int kMaxHeavyTries = 6;
 
 		for (int i = 1; i <= kMantleFwdIterations; ++i) {
 			const float stepDist = kSweepStep * static_cast<float>(i);
@@ -466,6 +466,21 @@ namespace
 
 			const RE::NiPoint3 ledgePoint{ rayStart.x, rayStart.y, rayStart.z - ledgeRay.distance };
 			if (BelowWater(a_player, ledgePoint)) continue;
+
+			// One-ray sky precheck BEFORE spending a heavy try: under a
+			// leaning face (big boulders) the sweep finds shelf after
+			// shelf with rock directly above, and those drained the whole
+			// heavy budget before the sweep ever reached the crest
+			// ("gave up after N lips" with every reject reading "head").
+			{
+				RE::NiPoint3 skyStart = Add(ledgePoint, RE::NiPoint3{ 0.0f, 0.0f, 5.0f });
+				Raycast::RayHit sky{};
+				Raycast::CastDir(skyStart, up, Detection::kCrouchHeight, sky);
+				if (sky.hit && sky.distance < Detection::kCrouchHeight) {
+					DbgRay(skyStart, up, Detection::kCrouchHeight, sky, false, "lip sky");
+					continue;
+				}
+			}
 
 			// Cheap step checks passed — heavy validation, bounded.
 			if (++heavyTries > kMaxHeavyTries) {

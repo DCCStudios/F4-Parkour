@@ -359,6 +359,10 @@ namespace
 	{
 		auto* s = Settings::GetSingleton();
 
+		// Content scrolls inside a child region; the save bar below it
+		// stays pinned on screen at every scroll position.
+		ImGuiMCP::BeginChild("##gencontent", ImVec2{ 0.0f, -74.0f }, 0, 0);
+
 		SectionHeader("Vault & Mantle",
 			"Code-driven parkour triggered by the jump key. Vault = up and over "
 			"(momentum kept). Mantle = up on top (momentum cleared).");
@@ -407,6 +411,7 @@ namespace
 			"anchor to it and motion reads far smoother (Techland's cheapest anti-nausea fix).");
 		SliderTip("Focus dot opacity", &s->focusDotAlpha, 0.05f, 1.0f, "%.2f", "");
 
+		ImGuiMCP::EndChild();
 		SaveBar();
 	}
 
@@ -418,6 +423,10 @@ namespace
 		auto* s = Settings::GetSingleton();
 		auto* presets = Presets::GetSingleton();
 		auto& p = presets->Active();
+
+		// Content scrolls inside a child region; the save bar below it
+		// stays pinned on screen at every scroll position.
+		ImGuiMCP::BeginChild("##movcontent", ImVec2{ 0.0f, -74.0f }, 0, 0);
 
 		SectionHeader("Feel preset",
 			"Tier heights, times, and motion curves. Shipped presets: Smooth, Snappy, "
@@ -582,6 +591,7 @@ namespace
 			ParkourManager::GetSingleton()->ForceActivate(MoveKind::Mantle);
 		}
 
+		ImGuiMCP::EndChild();
 		SaveBar();
 	}
 
@@ -618,6 +628,10 @@ namespace
 	void __stdcall RenderDebug()
 	{
 		auto* s = Settings::GetSingleton();
+
+		// Content scrolls inside a child region; the save bar below it
+		// stays pinned on screen at every scroll position.
+		ImGuiMCP::BeginChild("##dbgcontent", ImVec2{ 0.0f, -74.0f }, 0, 0);
 
 		SectionHeader("Debug tools",
 			"World overlays draw every detection ray with its result; the decision log "
@@ -738,6 +752,7 @@ namespace
 		ImGuiMCP::Spacing();
 		DrawDebugContent();
 
+		ImGuiMCP::EndChild();
 		SaveBar();
 	}
 
