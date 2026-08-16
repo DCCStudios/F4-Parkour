@@ -26,7 +26,7 @@ namespace
 
 	constexpr float kVaultLength = 100.0f;       // forward reach of the vault sweep
 	constexpr float kSweepStep = 5.0f;           // down-sweep spacing
-	constexpr int   kSweepIterations = 24;       // 120 units of forward coverage
+	constexpr int   kSweepIterations = 40;       // 200 units of forward coverage - matches the mantle reach so the indicator never promises a vault the sweep can't deliver
 	constexpr int   kMantleFwdIterations = 40;   // 200 units of mantle coverage - a leaning rock at max height holds its crest far forward
 	constexpr float kMinLedgeFlatness = 0.5f;    // normal.z for a standable top
 
@@ -217,6 +217,7 @@ namespace
 		bool  foundLanding = false;
 		float landingHeight = 10000.0f;
 		int   landingIdx = -1;
+		int   tooHighRun = 0;
 		RE::NiPoint3 ledgePoint{};
 
 		for (int i = 0; i < kSweepIterations; ++i) {
@@ -234,10 +235,20 @@ namespace
 			const float hitHeight = (start.z - hit.distance) - playerPos.z;
 
 			if (hitHeight > settings->maxVaultHeight) {
+				// A single too-high hit is often a pencil-thin spike (a
+				// leaning picket tip) that one ray happens to clip — one
+				// such hit used to abort the ENTIRE scan and made broken
+				// fences undetectable. Only a persisting too-high face
+				// (a real wall: consecutive steps) ends the sweep.
+				++tooHighRun;
 				DbgRay(start, down, sweepDepth, hit, false, "too high");
-				DbgReject("vault", "surface {:.0f} above max {:.0f}", hitHeight, settings->maxVaultHeight);
-				return;
+				if (tooHighRun >= 2) {
+					DbgReject("vault", "wall {:.0f} above max {:.0f}", hitHeight, settings->maxVaultHeight);
+					return;
+				}
+				continue;
 			}
+			tooHighRun = 0;
 
 			DbgRay(start, down, sweepDepth, hit, true, nullptr);
 
@@ -250,10 +261,12 @@ namespace
 			const bool isTop = !isLanding && hitHeight > settings->minVaultHeight;
 
 			if (isTop) {
-				if (HitIsDoor(hit)) {
-					DbgReject("vault", "surface is a door");
-					return;
-				}
+				// NO door exclusion here: a door at vault height is a GATE,
+				// the most vaultable thing in the game (the old abort made
+				// the Sanctuary picket gate undetectable). Real doors are
+				// taller than maxVaultHeight and never reach this branch;
+				// the MANTLE scan keeps its door exclusion so nobody ends
+				// up standing on a swinging gate.
 				if (foundLanding) {
 					// Solid again past the gap: the "landing" was a slot in
 					// the obstacle, not open ground. Rescind it fully so a
