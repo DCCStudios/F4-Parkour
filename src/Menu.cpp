@@ -438,11 +438,21 @@ namespace
 		SectionHeader("Pace & momentum");
 		ch |= ImGuiMCP::SliderFloat("Global speed", &p.speedMult, 0.25f, 4.0f, "%.2fx");
 		ch |= ImGuiMCP::SliderFloat("Sprint time scale", &p.sprintDurationScale, 0.4f, 1.5f, "%.2fx");
+		if (ImGuiMCP::IsItemHovered()) {
+			ImGuiMCP::SetTooltip("%s",
+				"Multiplies move time when entering at sprint. BELOW 1.0 makes sprint "
+				"vaults FASTER than walk-up ones; set 1.0 for identical timing.");
+		}
 		ch |= ImGuiMCP::SliderFloat("Apex clearance", &p.apexClearance, 0.0f, 40.0f, "%.0f");
 		if (ch) {
 			p.Sanitize();
 			presets->hasUnsavedChanges = true;
 		}
+		SliderTip("Vault speed matching", &s->vaultSpeedMatch, 0.0f, 1.0f, "%.2f",
+			"Fast entries compress the vault so ground speed stays constant (Brink-style "
+			"flow). 0 = OFF: every vault takes its full tier time, uniform speed. "
+			"1 = full compression. This - not momentum - is what made sprint vaults "
+			"much quicker than others.");
 		SliderTip("Momentum kept on vault", &s->momentumKeep, 0.0f, 1.5f, "%.2fx",
 			"How much of your entry speed carries through a vault landing. Sprint through "
 			"vaults at 1.0.");

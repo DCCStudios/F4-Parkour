@@ -50,6 +50,7 @@ namespace F4Parkour
 
 		// ---- [Movement] ----
 		float momentumKeep{ 1.0f };         // 0..1 of entry speed restored on vault exit
+		float vaultSpeedMatch{ 0.5f };      // 0 = tier time always, 1 = full speed-match
 		float exitDirBlend{ 0.5f };         // approach dir -> current input dir
 		float momentumDropCutoff{ 100.0f }; // zero momentum when landing drop exceeds
 		float controlHandback{ 0.25f };     // final fraction of move with input live

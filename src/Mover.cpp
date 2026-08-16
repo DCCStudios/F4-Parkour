@@ -344,7 +344,14 @@ namespace F4Parkour
 			duration *= preset.sprintDurationScale;
 		}
 		duration = std::max(0.15f, duration / std::max(0.25f, preset.speedMult));
-		if (vault && entrySpeed > 250.0f) {
+		// Speed matching, USER-CONTROLLED (Settings::vaultSpeedMatch).
+		// The old always-on rule silently compressed fast entries to as
+		// little as 55% of the tier time — "some vaults are a lot faster
+		// than others" with no slider that could stop it. 0 = uniform
+		// vaults (tier time regardless of entry speed), 1 = full
+		// constant-ground-speed compression (Brink flow).
+		const float match = Settings::GetSingleton()->vaultSpeedMatch;
+		if (vault && entrySpeed > 250.0f && match > 0.01f) {
 			const float dx = endPos.x - startPos.x;
 			const float dy = endPos.y - startPos.y;
 			const float flatLen = std::sqrt(dx * dx + dy * dy);
@@ -352,7 +359,8 @@ namespace F4Parkour
 			// Keep flow without teleporting: never quicker than 0.35s or
 			// 55% of the tier time, whichever is larger.
 			const float floor_ = std::max(0.35f, duration * 0.55f);
-			duration = std::clamp(speedMatched, floor_, duration);
+			const float target = std::clamp(speedMatched, floor_, duration);
+			duration += (target - duration) * match;
 		}
 
 		if (!ValidatePath(ledge)) {

@@ -43,6 +43,7 @@ namespace F4Parkour
 		airGrabExtraReach   = getF("Detection", "fAirGrabExtraReach", airGrabExtraReach);
 
 		momentumKeep       = getF("Movement", "fMomentumKeep", momentumKeep);
+		vaultSpeedMatch    = getF("Movement", "fVaultSpeedMatch", vaultSpeedMatch);
 		exitDirBlend       = getF("Movement", "fExitDirectionBlend", exitDirBlend);
 		momentumDropCutoff = getF("Movement", "fMomentumDropCutoff", momentumDropCutoff);
 		controlHandback    = getF("Movement", "fControlHandbackFraction", controlHandback);
@@ -84,6 +85,7 @@ namespace F4Parkour
 		jumpBufferWindow    = std::clamp(jumpBufferWindow, 0.0f, 0.6f);
 		coyoteWindow        = std::clamp(coyoteWindow, 0.0f, 0.5f);
 		momentumKeep        = std::clamp(momentumKeep, 0.0f, 1.5f);
+		vaultSpeedMatch     = std::clamp(vaultSpeedMatch, 0.0f, 1.0f);
 		exitDirBlend        = std::clamp(exitDirBlend, 0.0f, 1.0f);
 		controlHandback     = std::clamp(controlHandback, 0.0f, 0.6f);
 		maxApproachAngleDeg = std::clamp(maxApproachAngleDeg, 10.0f, 90.0f);
@@ -134,6 +136,7 @@ namespace F4Parkour
 		setF("Detection", "fAirGrabExtraReach", airGrabExtraReach);
 
 		setF("Movement", "fMomentumKeep", momentumKeep);
+		setF("Movement", "fVaultSpeedMatch", vaultSpeedMatch);
 		setF("Movement", "fExitDirectionBlend", exitDirBlend);
 		setF("Movement", "fMomentumDropCutoff", momentumDropCutoff);
 		setF("Movement", "fControlHandbackFraction", controlHandback);
