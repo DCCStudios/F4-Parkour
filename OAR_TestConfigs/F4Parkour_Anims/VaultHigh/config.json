@@ -1,0 +1,22 @@
+{
+  "name": "Vault High",
+  "description": "Replaces the melee clip with a tall vault (highest tier) animation while F4Parkour runs it. Tier keyword: AnimsParkourVaultHighKeyword. Drop the replacement .hkx next to this config, named after the melee animation it replaces.",
+  "priority": 5000,
+  "disabled": false,
+  "interruptible": true,
+  "replaceOnLoop": false,
+  "replaceOnEcho": false,
+  "conditions": [
+    {
+      "condition": "IsForm",
+      "Form": {
+        "pluginName": "Fallout4.esm",
+        "formID": "0x14"
+      }
+    },
+    {
+      "condition": "HasKeyword",
+      "editorID": "AnimsParkourVaultHighKeyword"
+    }
+  ]
+}

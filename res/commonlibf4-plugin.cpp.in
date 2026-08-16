@@ -1,0 +1,24 @@
+#include <F4SE/F4SE.h>
+
+// F4SE reads this export before calling F4SEPlugin_Load. Both Address
+// Library and layout-dependence bits must be set for the NG and AE
+// runtime families; OG compatibility is declared by the legacy query
+// export retained in main.cpp.
+F4SE_PLUGIN_VERSION = []() noexcept {
+	F4SE::PluginVersionData v{};
+	v.PluginVersion({
+		${COMMONLIB_PLUGIN_VERSION_MAJOR},
+		${COMMONLIB_PLUGIN_VERSION_MINOR},
+		${COMMONLIB_PLUGIN_VERSION_PATCH},
+		0
+	});
+	v.PluginName("${COMMONLIB_PLUGIN_NAME}");
+	v.AuthorName("${COMMONLIB_PLUGIN_AUTHOR}");
+	v.UsesAddressLibrary(true);
+	v.UsesAddressLibraryNG(true);
+	v.UsesSigScanning(false);
+	v.IsLayoutDependent(true);
+	v.IsLayoutDependentNG(true);
+	v.HasNoStructUse(false);
+	return v;
+}();

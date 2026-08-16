@@ -1,0 +1,97 @@
+#pragma once
+
+#include <string>
+
+namespace F4Parkour
+{
+	// INI-backed general settings. Feel presets (tiers/durations/curves)
+	// live in Curves.h; this holds everything else the menu edits.
+	class Settings
+	{
+	public:
+		static Settings* GetSingleton()
+		{
+			static Settings singleton;
+			return &singleton;
+		}
+
+		void Load();
+		void Save();
+
+		// ---- [General] ----
+		bool  enabled{ true };
+		bool  playMeleeAnim{ true };        // hijack the melee action for OAR
+		bool  autoParkourSprint{ false };   // auto-vault while sprinting
+		bool  autoStepUp{ false };          // auto-vault knee-height obstacles
+		bool  allowInAir{ true };           // air-mantle after a jump
+		bool  allowThirdPerson{ true };
+		bool  indicatorEnabled{ true };     // HUD ring on above-LOW candidates
+		bool  requireForward{ true };       // contextual rule: forward input
+		float lookConeDeg{ 35.0f };         // must be looking at the ledge
+		float detectionInterval{ 0.05f };   // seconds between scans
+		std::string activePreset{ "Smooth" };
+
+		// ---- [Input] ----
+		float jumpBufferWindow{ 0.20f };    // buffered jump press (s)
+		float coyoteWindow{ 0.15f };        // grounded grace after walk-off (s)
+		bool  holdToMantle{ false };        // hold jump biases to mantle
+
+		// ---- [Detection] ----
+		float minVaultHeight{ 40.0f };
+		float maxVaultHeight{ 110.0f };
+		float minMantleHeight{ 40.0f };
+		float maxMantleHeight{ 200.0f };
+		float minMantleDepth{ 25.0f };      // thinner tops are vault-only
+		float minBackClearance{ 40.0f };    // room needed past the far edge
+		float maxVaultDrop{ 140.0f };       // landing may be this far below the ledge
+		float maxApproachAngleDeg{ 45.0f }; // reject oblique approaches
+		float autoEngageDistance{ 60.0f };  // auto-parkour trigger range
+		float airGrabExtraReach{ 80.0f };   // added mantle height while airborne
+
+		// ---- [Movement] ----
+		float momentumKeep{ 1.0f };         // 0..1 of entry speed restored on vault exit
+		float exitDirBlend{ 0.5f };         // approach dir -> current input dir
+		float momentumDropCutoff{ 100.0f }; // zero momentum when landing drop exceeds
+		float controlHandback{ 0.25f };     // final fraction of move with input live
+		bool  sneakOnCrouchOnly{ true };    // force sneak after crouch-headroom mantles
+
+		// ---- [Comfort] ----
+		bool  focusDot{ true };
+		float focusDotAlpha{ 0.35f };
+
+		// ---- [Testing] ----
+		// Per-tier: play a test idle (PlayIdle) at move start instead of
+		// the melee action, so animations can be iterated without OAR.
+		bool testIdleVault[3]{ false, false, false };   // low / mid / high
+		bool testIdleMantle[3]{ false, false, false };
+		// Recipe extracted from Inspectweapons.esl (1959 working weapon-
+		// drawn FP idles): animFileName INCLUDES the Meshes\ prefix, the
+		// event is dyn_ActivationAllowMovement, and behaviorGraphName must
+		// name the FIRST-PERSON root behavior or SetupSpecialIdle refuses.
+		std::string testIdlePath{ "Meshes\\Actors\\Character\\Animation\\F4Parkour\\Ledge.hkx" };
+		std::string testIdleEvent{ "dyn_ActivationAllowMovement" };
+		std::string testIdleBehavior{ "actors\\Character\\_1stPerson\\Behaviors\\RootBehavior.hkx" };
+
+		// Second test-idle slot: plays Mantle.hkx and additionally SKIPS the
+		// fast-equip animation that normally plays when an idle ends (the
+		// SeamlessInspect technique). Slot 2 wins over slot 1 on a tier that
+		// has both on.
+		bool testIdle2Vault[3]{ false, false, false };
+		bool testIdle2Mantle[3]{ false, false, false };
+		std::string testIdle2Path{ "Meshes\\Actors\\Character\\Animations\\F4Parkour\\Vault.hkx" };
+		std::string testIdle2Event{ "dyn_ActivationAllowMovement" };
+
+		// ---- [Debug] ----
+		bool  debugEnabled{ false };
+		bool  drawRays{ true };
+		bool  drawPath{ true };
+		bool  drawOnlyFailed{ false };
+		bool  freezeDetection{ false };
+		float moverTimeScale{ 1.0f };       // slow-motion mover for inspection
+		bool  watchdogEnabled{ true };
+
+	private:
+		Settings() = default;
+		static constexpr const char* kINIPath = "Data/F4SE/Plugins/F4Parkour.ini";
+	};
+}

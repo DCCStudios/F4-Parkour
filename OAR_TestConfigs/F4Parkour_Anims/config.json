@@ -1,0 +1,5 @@
+{
+  "name": "F4Parkour Anims",
+  "author": "DCC Studios",
+  "description": "Example Open Animation Replacer configs for F4Parkour. F4Parkour fires the vanilla melee action while a vault/mantle plays and pre-arms runtime keywords on the player; these submods replace the melee clip with parkour animations, one per height tier. Drop your replacement .hkx files into each submod folder. Keywords: AnimsParkourKeyword (any move), AnimsParkourVaultKeyword / AnimsParkourMantleKeyword (per kind), and per tier AnimsParkourVaultLowKeyword / AnimsParkourVaultMidKeyword / AnimsParkourVaultHighKeyword / AnimsParkourMantleLowKeyword / AnimsParkourMantleMidKeyword / AnimsParkourMantleHighKeyword (nearest tier by the preset's tier heights). Graph variables: F4Parkour_Type (-1 none / 0 vault / 1 mantle), F4Parkour_Height (ledge height, game units)."
+}

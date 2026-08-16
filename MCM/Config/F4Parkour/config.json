@@ -1,0 +1,139 @@
+{
+  "modName": "F4Parkour",
+  "displayName": "F4 Parkour",
+  "minMcmVersion": 1,
+  "pluginRequirements": ["F4Parkour"],
+  "content": [
+    {
+      "text": "General",
+      "type": "section"
+    },
+    {
+      "text": "Enable Parkour",
+      "type": "switcher",
+      "valueType": "bool",
+      "settingName": "bEnabled:General",
+      "defaultValue": true
+    },
+    {
+      "text": "Detection Interval",
+      "type": "stepper",
+      "valueType": "float",
+      "settingName": "fDetectionInterval:General",
+      "defaultValue": 0.05,
+      "min": 0.01,
+      "max": 0.5,
+      "steps": 0.01
+    },
+    {
+      "text": "Input",
+      "type": "section"
+    },
+    {
+      "text": "Parkour Key (DirectInput code)",
+      "type": "stepper",
+      "valueType": "int",
+      "settingName": "iParkourKey:Input",
+      "defaultValue": 57,
+      "min": 1,
+      "max": 255,
+      "steps": 1
+    },
+    {
+      "text": "Require Moving Forward",
+      "type": "switcher",
+      "valueType": "bool",
+      "settingName": "bRequireMoving:Input",
+      "defaultValue": true
+    },
+    {
+      "text": "Heights",
+      "type": "section"
+    },
+    {
+      "text": "Min Vault Height",
+      "type": "stepper",
+      "valueType": "float",
+      "settingName": "fMinVaultHeight:Heights",
+      "defaultValue": 40.5,
+      "min": 10.0,
+      "max": 120.0,
+      "steps": 0.5
+    },
+    {
+      "text": "Max Vault Height",
+      "type": "stepper",
+      "valueType": "float",
+      "settingName": "fMaxVaultHeight:Heights",
+      "defaultValue": 120.0,
+      "min": 60.0,
+      "max": 200.0,
+      "steps": 1.0
+    },
+    {
+      "text": "Min Mantle Height",
+      "type": "stepper",
+      "valueType": "float",
+      "settingName": "fMinMantleHeight:Heights",
+      "defaultValue": 30.0,
+      "min": 10.0,
+      "max": 120.0,
+      "steps": 1.0
+    },
+    {
+      "text": "Max Mantle Height",
+      "type": "stepper",
+      "valueType": "float",
+      "settingName": "fMaxMantleHeight:Heights",
+      "defaultValue": 250.0,
+      "min": 100.0,
+      "max": 400.0,
+      "steps": 5.0
+    },
+    {
+      "text": "Movement",
+      "type": "section"
+    },
+    {
+      "text": "Lerp Speed",
+      "type": "stepper",
+      "valueType": "float",
+      "settingName": "fLerpSpeed:Movement",
+      "defaultValue": 3.0,
+      "min": 0.5,
+      "max": 10.0,
+      "steps": 0.1
+    },
+    {
+      "text": "Vault Landing Impulse",
+      "type": "stepper",
+      "valueType": "float",
+      "settingName": "fVaultLandingImpulse:Movement",
+      "defaultValue": 200.0,
+      "min": 0.0,
+      "max": 500.0,
+      "steps": 10.0
+    },
+    {
+      "text": "HUD",
+      "type": "section"
+    },
+    {
+      "text": "Show Indicator",
+      "type": "switcher",
+      "valueType": "bool",
+      "settingName": "bShowIndicator:HUD",
+      "defaultValue": true
+    },
+    {
+      "text": "Indicator Alpha",
+      "type": "stepper",
+      "valueType": "float",
+      "settingName": "fIndicatorAlpha:HUD",
+      "defaultValue": 0.8,
+      "min": 0.0,
+      "max": 1.0,
+      "steps": 0.05
+    }
+  ]
+}

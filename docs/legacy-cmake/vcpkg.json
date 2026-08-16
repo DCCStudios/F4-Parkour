@@ -1,0 +1,17 @@
+{
+  "name": "f4parkour",
+  "version-string": "1.0.0",
+  "description": "Vault and mantle system for Fallout 4",
+  "license": "MIT",
+  "dependencies": [
+    "boost-stl-interfaces",
+    "boost-iostreams",
+    "boost-iterator",
+    "boost-predef",
+    "fmt",
+    "frozen",
+    "rsm-mmio",
+    "spdlog",
+    "xbyak"
+  ]
+}
