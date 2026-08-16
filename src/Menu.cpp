@@ -43,6 +43,19 @@ namespace
 		return changed;
 	}
 
+	// Preset-field sibling of SliderTip: marks the PRESET pacing dirty.
+	// The easing sliders used SliderTip before, which marked the INI
+	// settings dirty instead — easing edits could quietly never save.
+	bool PresetSliderTip(const char* a_label, float* a_v, float a_min, float a_max, const char* a_fmt, const char* a_tip)
+	{
+		const bool changed = ImGuiMCP::SliderFloat(a_label, a_v, a_min, a_max, a_fmt);
+		if (ImGuiMCP::IsItemHovered() && a_tip && a_tip[0]) {
+			ImGuiMCP::SetTooltip("%s", a_tip);
+		}
+		if (changed) Presets::GetSingleton()->pacingDirty = true;
+		return changed;
+	}
+
 	void SectionHeader(const char* a_title, const char* a_tip = nullptr)
 	{
 		ImGuiMCP::Spacing();
@@ -53,16 +66,80 @@ namespace
 		ImGuiMCP::Separator();
 	}
 
+	// ONE save button for the whole plugin. Opens a popup listing every
+	// store with its dirty state; the user picks what to write.
 	void SaveBar()
 	{
+		auto* settings = Settings::GetSingleton();
+		auto* presets = Presets::GetSingleton();
+		const bool sDirty = s_settingsDirty;
+		const bool pDirty = presets->pacingDirty;
+		const bool cDirty = presets->curvesDirty;
+		const bool any = sDirty || pDirty || cDirty;
+
+		static bool pickSettings = false, pickPacing = false, pickCurves = false;
+
 		ImGuiMCP::Spacing();
-		if (s_settingsDirty) {
-			ImGuiMCP::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "Unsaved changes (autosaving...)");
-			ImGuiMCP::SameLine();
+		ImGuiMCP::Separator();
+		if (ImGuiMCP::Button("Save...")) {
+			pickSettings = sDirty;
+			pickPacing = pDirty;
+			pickCurves = cDirty;
+			ImGuiMCP::OpenPopup("##f4psave", 0);
 		}
-		if (ImGuiMCP::Button("Save settings")) {
-			Settings::GetSingleton()->Save();
-			s_settingsDirty = false;
+		ImGuiMCP::SameLine();
+		if (any) {
+			std::string what = "Unsaved:";
+			if (sDirty) what += " settings";
+			if (pDirty) what += (sDirty ? ", preset" : " preset");
+			if (cDirty) what += (sDirty || pDirty ? ", curves" : " curves");
+			ImGuiMCP::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "%s", what.c_str());
+		} else {
+			ImGuiMCP::TextColored(ImVec4(0.5f, 0.8f, 0.5f, 1.0f), "All saved");
+		}
+
+		if (ImGuiMCP::BeginPopup("##f4psave", 0)) {
+			auto& p = presets->Active();
+			ImGuiMCP::Text("Save what?");
+			ImGuiMCP::Separator();
+
+			auto row = [](const char* a_label, bool a_dirty, bool* a_pick) {
+				ImGuiMCP::Checkbox(a_label, a_pick);
+				ImGuiMCP::SameLine();
+				if (a_dirty) {
+					ImGuiMCP::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "(unsaved)");
+				} else {
+					ImGuiMCP::TextColored(ImVec4(0.5f, 0.8f, 0.5f, 1.0f), "(saved)");
+				}
+			};
+			row("Plugin settings (INI)", sDirty, &pickSettings);
+			const std::string pacingLabel = std::format("Preset '{}' heights & pacing", p.name);
+			row(pacingLabel.c_str(), pDirty, &pickPacing);
+			const std::string curvesLabel = std::format("Preset '{}' curves", p.name);
+			row(curvesLabel.c_str(), cDirty, &pickCurves);
+
+			ImGuiMCP::Separator();
+			if (ImGuiMCP::Button("Save selected")) {
+				if (pickSettings) {
+					settings->Save();
+					s_settingsDirty = false;
+				}
+				if (pickPacing) presets->SavePresetMain(p.name);
+				if (pickCurves) presets->SavePresetCurves(p.name);
+				ImGuiMCP::CloseCurrentPopup();
+			}
+			ImGuiMCP::SameLine();
+			if (ImGuiMCP::Button("Save everything")) {
+				settings->Save();
+				s_settingsDirty = false;
+				presets->SavePreset(p.name);
+				ImGuiMCP::CloseCurrentPopup();
+			}
+			ImGuiMCP::SameLine();
+			if (ImGuiMCP::Button("Cancel")) {
+				ImGuiMCP::CloseCurrentPopup();
+			}
+			ImGuiMCP::EndPopup();
 		}
 	}
 
@@ -224,7 +301,7 @@ namespace
 		ImGuiMCP::Spacing();
 
 		if (changed) {
-			Presets::GetSingleton()->hasUnsavedChanges = true;
+			Presets::GetSingleton()->curvesDirty = true;
 		}
 		ImGuiMCP::PopID();
 	}
@@ -344,7 +421,8 @@ namespace
 
 		SectionHeader("Feel preset",
 			"Tier heights, times, and motion curves. Shipped presets: Smooth, Snappy, "
-			"Deliberate, Arcade. Edits apply live and autosave a moment after you let go.");
+			"Deliberate, Arcade. Edits apply live; the Save button at the bottom of the "
+			"page writes them to disk (curves live in their own .curves.json side file).");
 
 		if (ImGuiMCP::BeginCombo("Preset", p.name.c_str(), 0)) {
 			for (const auto& name : presets->List()) {
@@ -357,17 +435,10 @@ namespace
 			}
 			ImGuiMCP::EndCombo();
 		}
-		if (presets->hasUnsavedChanges) {
-			ImGuiMCP::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "Unsaved preset changes (autosaving...)");
-		}
-		if (ImGuiMCP::Button("Save")) {
-			presets->SavePreset(p.name);
-		}
-		ImGuiMCP::SameLine();
 		ImGuiMCP::SetNextItemWidth(160.0f);
 		ImGuiMCP::InputText("##newname", s_presetNameBuf, sizeof(s_presetNameBuf), 0, nullptr, nullptr);
 		ImGuiMCP::SameLine();
-		if (ImGuiMCP::Button("Save As") && s_presetNameBuf[0]) {
+		if (ImGuiMCP::Button("Save as new preset") && s_presetNameBuf[0]) {
 			presets->SavePreset(s_presetNameBuf);
 			s->activePreset = s_presetNameBuf;
 			Settings::GetSingleton()->Save();
@@ -446,7 +517,7 @@ namespace
 		ch |= ImGuiMCP::SliderFloat("Apex clearance", &p.apexClearance, 0.0f, 40.0f, "%.0f");
 		if (ch) {
 			p.Sanitize();
-			presets->hasUnsavedChanges = true;
+			presets->pacingDirty = true;
 		}
 		SliderTip("Vault speed matching", &s->vaultSpeedMatch, 0.0f, 1.0f, "%.2f",
 			"Fast entries compress the vault so ground speed stays constant (Brink-style "
@@ -484,7 +555,7 @@ namespace
 					tierNames[i], p2.vaultHeights[i], p2.vaultDurations[i]);
 				DrawArcEditor(label, p2.vaultArc[i], p2.vaultDurations[i]);
 			}
-			SliderTip("Vault speed easing", &p2.vaultEase, 0.0f, 1.0f, "%.2f",
+			PresetSliderTip("Vault speed easing", &p2.vaultEase, 0.0f, 1.0f, "%.2f",
 				"How your speed along the ground behaves: 0 = constant speed the whole way "
 				"(momentum feel), 1 = soft start and stop. Never reverses - the camera can "
 				"never move backward during a move.");
@@ -497,7 +568,7 @@ namespace
 					tierNames[i], p2.mantleHeights[i], p2.mantleDurations[i]);
 				DrawArcEditor(label, p2.mantleArc[i], p2.mantleDurations[i]);
 			}
-			SliderTip("Mantle speed easing", &p2.mantleEase, 0.0f, 1.0f, "%.2f",
+			PresetSliderTip("Mantle speed easing", &p2.mantleEase, 0.0f, 1.0f, "%.2f",
 				"0 = constant speed, 1 = soft start and stop. A slow finish reads as body "
 				"weight on the pull-up.");
 		}
@@ -666,6 +737,8 @@ namespace
 
 		ImGuiMCP::Spacing();
 		DrawDebugContent();
+
+		SaveBar();
 	}
 
 	void __stdcall RenderDebugPopout()
@@ -678,32 +751,6 @@ namespace
 	// ============================================================
 	void __stdcall RenderHUD()
 	{
-		// AUTOSAVE (settings + active preset): edits used to persist only
-		// behind per-page save buttons (the Debug page had none at all),
-		// so every tweak silently reverted on the next launch. This HUD
-		// callback runs every frame whether or not the menu is open, and
-		// BEFORE the enabled gate — disabling the mod must save too.
-		// Debounced behind mouse-up so a drag is never half-written.
-		{
-			static int s_quietFrames = 0;
-			auto* presets = Presets::GetSingleton();
-			const bool dirty = s_settingsDirty || presets->hasUnsavedChanges;
-			if (dirty && !ImGuiMCP::IsMouseDown(0)) {
-				if (++s_quietFrames > 45) {
-					if (s_settingsDirty) {
-						Settings::GetSingleton()->Save();
-						s_settingsDirty = false;
-					}
-					if (presets->hasUnsavedChanges) {
-						presets->SavePreset(presets->Active().name);
-					}
-					s_quietFrames = 0;
-				}
-			} else {
-				s_quietFrames = 0;
-			}
-		}
-
 		auto* s = Settings::GetSingleton();
 		if (!s->enabled) return;
 

@@ -106,13 +106,19 @@ namespace F4Parkour
 		// The preset the mover uses. Menu edits mutate this in place.
 		FeelPreset& Active() { return active; }
 		const FeelPreset& Active() const { return active; }
-		bool hasUnsavedChanges{ false };
+		// Split dirty tracking for the unified save popup: pacing edits
+		// (the main <name>.json) vs curve edits (<name>.curves.json).
+		bool pacingDirty{ false };
+		bool curvesDirty{ false };
+		bool AnyUnsaved() const { return pacingDirty || curvesDirty; }
 
 		const std::vector<std::string>& List() const { return names; }
 		void RefreshList();
 
 		bool LoadPreset(const std::string& a_name);        // into Active()
-		bool SavePreset(const std::string& a_name);        // Active() to disk
+		bool SavePreset(const std::string& a_name);        // Active() to disk (both files)
+		bool SavePresetMain(const std::string& a_name);    // heights/durations/pacing/easing
+		bool SavePresetCurves(const std::string& a_name);  // arc curves side file
 		bool DeletePreset(const std::string& a_name);
 
 		// Duplicate a preset file on disk (source untouched, existing

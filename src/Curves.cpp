@@ -200,7 +200,12 @@ namespace F4Parkour
 	// ============================================================
 	// JSON round trip
 	// ============================================================
-	static json PresetToJson(const FeelPreset& a_p)
+	// Curves live in a SEPARATE side file (<name>.curves.json) so curve
+	// edits and pacing edits save independently — and so a schema change
+	// on one side can never silently eat the other (the old single-file
+	// format defaulted unknown keys and baked the defaults on save,
+	// which is how user curve edits kept "resetting").
+	static json PresetMainToJson(const FeelPreset& a_p)
 	{
 		json j;
 		j["name"] = a_p.name;
@@ -223,7 +228,12 @@ namespace F4Parkour
 			{ "vault", a_p.vaultEase },
 			{ "mantle", a_p.mantleEase },
 		};
-		j["curves"] = {
+		return j;
+	}
+
+	static json PresetCurvesToJson(const FeelPreset& a_p)
+	{
+		return json{
 			{ "vault.arc.low", CurveToJson(a_p.vaultArc[0]) },
 			{ "vault.arc.mid", CurveToJson(a_p.vaultArc[1]) },
 			{ "vault.arc.high", CurveToJson(a_p.vaultArc[2]) },
@@ -232,7 +242,40 @@ namespace F4Parkour
 			{ "mantle.arc.high", CurveToJson(a_p.mantleArc[2]) },
 			{ "camera.dip", CurveToJson(a_p.cameraDip) },
 		};
-		return j;
+	}
+
+	static void ApplyCurvesJson(const json& a_c, FeelPreset& a_p)
+	{
+		if (!a_c.is_object()) return;
+		auto load = [&](const char* a_key, Curve& a_curve) {
+			if (a_c.contains(a_key)) CurveFromJson(a_c[a_key], a_curve);
+		};
+		load("vault.arc.low", a_p.vaultArc[0]);
+		load("vault.arc.mid", a_p.vaultArc[1]);
+		load("vault.arc.high", a_p.vaultArc[2]);
+		load("mantle.arc.low", a_p.mantleArc[0]);
+		load("mantle.arc.mid", a_p.mantleArc[1]);
+		load("mantle.arc.high", a_p.mantleArc[2]);
+		load("camera.dip", a_p.cameraDip);
+
+		// Legacy (pre-tier) preset migration: the old vertical curves
+		// seed all three tiers so user presets keep their feel.
+		if (!a_c.contains("vault.arc.low") && a_c.contains("vault.vertical")) {
+			Curve legacy{};
+			if (CurveFromJson(a_c["vault.vertical"], legacy)) {
+				a_p.vaultArc[0] = legacy;
+				a_p.vaultArc[1] = legacy;
+				a_p.vaultArc[2] = legacy;
+			}
+		}
+		if (!a_c.contains("mantle.arc.low") && a_c.contains("mantle.vertical")) {
+			Curve legacy{};
+			if (CurveFromJson(a_c["mantle.vertical"], legacy)) {
+				a_p.mantleArc[0] = legacy;
+				a_p.mantleArc[1] = legacy;
+				a_p.mantleArc[2] = legacy;
+			}
+		}
 	}
 
 	static bool PresetFromJson(const json& a_j, FeelPreset& a_out)
@@ -266,36 +309,9 @@ namespace F4Parkour
 			if (e.contains("mantle") && e["mantle"].is_number()) p.mantleEase = e["mantle"].get<float>();
 		}
 		if (a_j.contains("curves") && a_j["curves"].is_object()) {
-			const auto& c = a_j["curves"];
-			auto load = [&](const char* a_key, Curve& a_curve) {
-				if (c.contains(a_key)) CurveFromJson(c[a_key], a_curve);
-			};
-			load("vault.arc.low", p.vaultArc[0]);
-			load("vault.arc.mid", p.vaultArc[1]);
-			load("vault.arc.high", p.vaultArc[2]);
-			load("mantle.arc.low", p.mantleArc[0]);
-			load("mantle.arc.mid", p.mantleArc[1]);
-			load("mantle.arc.high", p.mantleArc[2]);
-			load("camera.dip", p.cameraDip);
-
-			// Legacy (pre-tier) preset migration: the old vertical curves
-			// seed all three tiers so user presets keep their feel.
-			if (!c.contains("vault.arc.low") && c.contains("vault.vertical")) {
-				Curve legacy{};
-				if (CurveFromJson(c["vault.vertical"], legacy)) {
-					p.vaultArc[0] = legacy;
-					p.vaultArc[1] = legacy;
-					p.vaultArc[2] = legacy;
-				}
-			}
-			if (!c.contains("mantle.arc.low") && c.contains("mantle.vertical")) {
-				Curve legacy{};
-				if (CurveFromJson(c["mantle.vertical"], legacy)) {
-					p.mantleArc[0] = legacy;
-					p.mantleArc[1] = legacy;
-					p.mantleArc[2] = legacy;
-				}
-			}
+			// Legacy single-file presets embed curves here; the side file,
+			// when present, is applied on top by LoadPreset and wins.
+			ApplyCurvesJson(a_j["curves"], p);
 		}
 
 		p.Sanitize();
@@ -323,7 +339,8 @@ namespace F4Parkour
 			active.Sanitize();
 			logger::warn("[Presets] No preset files readable - using built-in defaults");
 		}
-		hasUnsavedChanges = false;
+		pacingDirty = false;
+		curvesDirty = false;
 	}
 
 	void Presets::RefreshList()
@@ -334,6 +351,7 @@ namespace F4Parkour
 			if (!entry.is_regular_file()) continue;
 			auto path = entry.path();
 			if (path.extension() != ".json") continue;
+			if (path.stem().extension() == ".curves") continue;  // side files are not presets
 			names.push_back(path.stem().string());
 		}
 		std::sort(names.begin(), names.end());
@@ -356,12 +374,31 @@ namespace F4Parkour
 		FeelPreset p{};
 		if (!PresetFromJson(j, p)) return false;
 		p.name = a_name;
+
+		// Side-file curves (<name>.curves.json) override any legacy
+		// embedded ones.
+		{
+			const auto cpath = std::filesystem::path(kPresetDir) / (a_name + ".curves.json");
+			std::ifstream curvesIn(cpath);
+			if (curvesIn.is_open()) {
+				try {
+					json cj;
+					curvesIn >> cj;
+					ApplyCurvesJson(cj, p);
+					p.Sanitize();
+				} catch (const std::exception& e) {
+					logger::warn("[Presets] Failed to parse '{}': {}", cpath.string(), e.what());
+				}
+			}
+		}
+
 		active = std::move(p);
-		hasUnsavedChanges = false;
+		pacingDirty = false;
+		curvesDirty = false;
 		return true;
 	}
 
-	bool Presets::SavePreset(const std::string& a_name)
+	bool Presets::SavePresetMain(const std::string& a_name)
 	{
 		if (a_name.empty()) return false;
 		std::error_code ec;
@@ -377,13 +414,42 @@ namespace F4Parkour
 			logger::warn("[Presets] Cannot write '{}'", path.string());
 			return false;
 		}
-		out << PresetToJson(copy).dump(2);
-		logger::info("[Presets] Saved '{}' -> {}", a_name,
+		out << PresetMainToJson(copy).dump(2);
+		logger::info("[Presets] Saved preset '{}' -> {}", a_name,
 			std::filesystem::absolute(path, ec).string());
 		active.name = a_name;
-		hasUnsavedChanges = false;
+		pacingDirty = false;
 		RefreshList();
 		return true;
+	}
+
+	bool Presets::SavePresetCurves(const std::string& a_name)
+	{
+		if (a_name.empty()) return false;
+		std::error_code ec;
+		std::filesystem::create_directories(kPresetDir, ec);
+
+		FeelPreset copy = active;
+		copy.Sanitize();
+
+		const auto path = std::filesystem::path(kPresetDir) / (a_name + ".curves.json");
+		std::ofstream out(path);
+		if (!out.is_open()) {
+			logger::warn("[Presets] Cannot write '{}'", path.string());
+			return false;
+		}
+		out << PresetCurvesToJson(copy).dump(2);
+		logger::info("[Presets] Saved curves '{}' -> {}", a_name,
+			std::filesystem::absolute(path, ec).string());
+		curvesDirty = false;
+		return true;
+	}
+
+	bool Presets::SavePreset(const std::string& a_name)
+	{
+		const bool mainOk = SavePresetMain(a_name);
+		const bool curvesOk = SavePresetCurves(a_name);
+		return mainOk && curvesOk;
 	}
 
 	bool Presets::CopyPreset(const std::string& a_source, const std::string& a_dest)
@@ -407,11 +473,30 @@ namespace F4Parkour
 		}
 		FeelPreset p{};
 		if (!PresetFromJson(j, p)) return false;
+
+		// Bring the source's side-file curves along too.
+		{
+			const auto cSrc = std::filesystem::path(kPresetDir) / (a_source + ".curves.json");
+			std::ifstream curvesIn(cSrc);
+			if (curvesIn.is_open()) {
+				try {
+					json cj;
+					curvesIn >> cj;
+					ApplyCurvesJson(cj, p);
+					p.Sanitize();
+				} catch (const std::exception&) {}
+			}
+		}
 		p.name = a_dest;
 
 		std::ofstream out(dstPath);
 		if (!out.is_open()) return false;
-		out << PresetToJson(p).dump(2);
+		out << PresetMainToJson(p).dump(2);
+		const auto cDst = std::filesystem::path(kPresetDir) / (a_dest + ".curves.json");
+		std::ofstream curvesOut(cDst);
+		if (curvesOut.is_open()) {
+			curvesOut << PresetCurvesToJson(p).dump(2);
+		}
 		RefreshList();
 		logger::info("[Presets] Copied preset '{}' -> '{}'", a_source, a_dest);
 		return true;
@@ -422,6 +507,7 @@ namespace F4Parkour
 		const auto path = std::filesystem::path(kPresetDir) / (a_name + ".json");
 		std::error_code ec;
 		const bool ok = std::filesystem::remove(path, ec) && !ec;
+		std::filesystem::remove(std::filesystem::path(kPresetDir) / (a_name + ".curves.json"), ec);
 		RefreshList();
 		return ok;
 	}
@@ -472,7 +558,12 @@ namespace F4Parkour
 
 			std::ofstream out(path);
 			if (out.is_open()) {
-				out << PresetToJson(p).dump(2);
+				out << PresetMainToJson(p).dump(2);
+			}
+			const auto cpath = std::filesystem::path(kPresetDir) / (std::string(s.name) + ".curves.json");
+			std::ofstream curvesOut(cpath);
+			if (curvesOut.is_open()) {
+				curvesOut << PresetCurvesToJson(p).dump(2);
 			}
 		}
 	}
