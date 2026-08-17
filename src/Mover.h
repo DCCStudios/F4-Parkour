@@ -26,7 +26,10 @@ namespace F4Parkour
 
 		// Start a move. a_kind must be eligible on the candidate.
 		// Returns false if activation-time path validation failed.
-		bool Start(RE::PlayerCharacter* a_player, const LedgeCandidate& a_candidate, MoveKind a_kind);
+		// a_dryRun runs the full setup + validation WITHOUT activating —
+		// the manager uses it every detection tick so the indicator and
+		// the jump decision can never disagree with a real press.
+		bool Start(RE::PlayerCharacter* a_player, const LedgeCandidate& a_candidate, MoveKind a_kind, bool a_dryRun = false);
 
 		// Per-frame update while active. a_dt is real seconds.
 		void Update(RE::PlayerCharacter* a_player, float a_dt);

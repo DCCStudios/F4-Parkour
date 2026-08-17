@@ -253,7 +253,7 @@ namespace F4Parkour
 		return std::clamp(bestX, 0.15f, 0.9f);
 	}
 
-	bool Mover::Start(RE::PlayerCharacter* a_player, const LedgeCandidate& a_candidate, MoveKind a_kind)
+	bool Mover::Start(RE::PlayerCharacter* a_player, const LedgeCandidate& a_candidate, MoveKind a_kind, bool a_dryRun)
 	{
 		if (active || a_kind == MoveKind::None) return false;
 		if (a_kind == MoveKind::Vault && !a_candidate.vaultEligible) return false;
@@ -364,11 +364,17 @@ namespace F4Parkour
 		}
 
 		if (!ValidatePath(ledge)) {
-			DebugDraw::GetSingleton()->Event("activation aborted: path blocked");
-			logger::info("[Mover] Activation aborted: path blocked ({} height={:.0f})",
-				vault ? "vault" : "mantle", height);
+			if (!a_dryRun) {
+				DebugDraw::GetSingleton()->Event("activation aborted: path blocked");
+				logger::info("[Mover] Activation aborted: path blocked ({} height={:.0f})",
+					vault ? "vault" : "mantle", height);
+			}
 			return false;
 		}
+
+		// Dry-run stops here: everything above is scratch state that a
+		// real Start reassigns; nothing observable has happened.
+		if (a_dryRun) return true;
 
 		t = 0.0f;
 		phase = MovePhase::Rising;
@@ -564,7 +570,10 @@ namespace F4Parkour
 			Raycast::CastDir(gStart, { 0.0f, 0.0f, -1.0f }, 300.0f, ground);
 			if (ground.hit) {
 				const float groundZ = gStart.z - ground.distance;
-				if (adjusted.z < groundZ + 0.5f) {
+				// Both directions: below ground = depenetration shove on
+				// hand-off; ABOVE ground = finishing in the air and then
+				// falling to the surface ("mantle ends hovering").
+				if (adjusted.z < groundZ + 0.5f || adjusted.z > groundZ + 4.0f) {
 					adjusted.z = groundZ + 0.5f;
 				}
 			}
@@ -577,6 +586,13 @@ namespace F4Parkour
 			preConvertEnd = preAdjust;
 			endPos = adjusted;
 			endBlend = 0.0f;  // glide into the corrected landing
+
+			// The glide needs ~0.15s to land; give it that time even
+			// when the commit fired late in the move.
+			const float remaining = duration - t;
+			if (remaining < 0.15f) {
+				duration = t + 0.15f;
+			}
 		}
 
 		// Crouch-only mantle: enter sneak NOW, while still rising toward
@@ -647,7 +663,12 @@ namespace F4Parkour
 		// Intent conversion window: vault → mantle while still rising, if
 		// forward was released (the player wants on top, not over).
 		if (phase == MovePhase::Rising) {
-			if (s >= apexS) {
+			// Commit no later than 70% progress: arcs that peak at the
+			// very end (typical mantle shapes) put apexS at 0.9, so the
+			// endpoint-refinement glide started with ~10% of the move
+			// left, never finished, and Finish snapped the remainder —
+			// the "land, then get teleported" jar.
+			if (s >= std::min(apexS, 0.7f)) {
 				phase = MovePhase::Committed;
 				OnCommitted(a_player);
 			} else if (kind == MoveKind::Vault && cand.mantleEligible && settings->requireForward &&
@@ -800,7 +821,9 @@ namespace F4Parkour
 			Raycast::CastDir(gStart, { 0.0f, 0.0f, -1.0f }, 300.0f, ground);
 			if (ground.hit) {
 				const float groundZ = gStart.z - ground.distance;
-				if (endPos.z < groundZ + 0.5f) {
+				// Both directions — hovering above the surface at finish
+				// reads as "land in the air, then drop".
+				if (endPos.z < groundZ + 0.5f || endPos.z > groundZ + 4.0f) {
 					endPos.z = groundZ + 0.5f;
 				}
 			} else {

@@ -251,16 +251,25 @@ namespace F4Parkour
 				}
 			}
 
-			// Pre-evaluate the contextual jump decision for the input hook.
-			const bool would = candidate.IsValid() && ContextualIntent(a_player);
+			// Pre-evaluate the FULL jump decision for the input hook —
+			// including a DRY-RUN of activation (the same path validation
+			// a real press runs). The stored flag, the indicator, and the
+			// space bar can no longer disagree: a ring on screen IS the
+			// promise that the press converts.
+			bool would = candidate.IsValid() && ContextualIntent(a_player);
+			if (would) {
+				const MoveKind kindWould = DecideKind(a_player);
+				would = kindWould != MoveKind::None &&
+					mover->Start(a_player, candidate, kindWould, true);
+			}
 			jumpWouldParkour.store(would, std::memory_order_relaxed);
 
 			// SkyParkour-style availability cue: ring the ledge the jump
 			// key would take, for everything above the LOW height (knee
-			// steps need no telegraph). Gated on DETECTION truth only —
-			// the activation extras (look cone, forward intent) govern
-			// the jump key, not what the world telegraphs as climbable.
-			if (settings->indicatorEnabled && candidate.IsValid()) {
+			// steps need no telegraph). Gated on the SAME full predicate
+			// as the jump key (intent + activation dry-run) — a visible
+			// ring that produced a vanilla hop was worse than no ring.
+			if (settings->indicatorEnabled && would) {
 				const auto& ipreset = Presets::GetSingleton()->Active();
 				const MoveKind wouldKind = DecideKind(a_player);
 				if (wouldKind == MoveKind::Vault &&
@@ -286,8 +295,13 @@ namespace F4Parkour
 			const bool started = TryActivate(a_player, forced);
 			if (!started && request == kRequestFromJump) {
 				// The hook ate a real press and no move came of it (path
-				// blocked between ticks). Refund the jump.
+				// blocked between ticks). Refund the jump — and drop the
+				// candidate so the ring stops promising a move that just
+				// proved impossible; the next scan re-earns it.
 				Input::ForwardJumpTap();
+				candidate.Reset();
+				jumpWouldParkour.store(false, std::memory_order_relaxed);
+				DebugDraw::GetSingleton()->ClearIndicator();
 			}
 			PublishDebugState(a_player, a_dt);
 			return;
