@@ -556,6 +556,58 @@ namespace
 		{
 			auto& p2 = presets->Active();
 			char label[96];
+
+			// Copy one tier's arc onto another: dial in a single curve,
+			// then stamp it across tiers as a starting point.
+			{
+				static int s_arcSrc = 0;
+				static int s_arcDst = 1;
+				static const char* kArcNames[6] = {
+					"Vault Low", "Vault Mid", "Vault High",
+					"Mantle Low", "Mantle Mid", "Mantle High"
+				};
+				Curve* arcs[6] = {
+					&p2.vaultArc[0], &p2.vaultArc[1], &p2.vaultArc[2],
+					&p2.mantleArc[0], &p2.mantleArc[1], &p2.mantleArc[2]
+				};
+				ImGuiMCP::Spacing();
+				ImGuiMCP::Text("Copy curve:");
+				ImGuiMCP::SameLine();
+				ImGuiMCP::SetNextItemWidth(130.0f);
+				if (ImGuiMCP::BeginCombo("##arccopysrc", kArcNames[s_arcSrc], 0)) {
+					for (int i = 0; i < 6; ++i) {
+						if (ImGuiMCP::Selectable(kArcNames[i], i == s_arcSrc, 0, ImVec2{ 0, 0 })) {
+							s_arcSrc = i;
+						}
+					}
+					ImGuiMCP::EndCombo();
+				}
+				ImGuiMCP::SameLine();
+				ImGuiMCP::Text("onto");
+				ImGuiMCP::SameLine();
+				ImGuiMCP::SetNextItemWidth(130.0f);
+				if (ImGuiMCP::BeginCombo("##arccopydst", kArcNames[s_arcDst], 0)) {
+					for (int i = 0; i < 6; ++i) {
+						if (ImGuiMCP::Selectable(kArcNames[i], i == s_arcDst, 0, ImVec2{ 0, 0 })) {
+							s_arcDst = i;
+						}
+					}
+					ImGuiMCP::EndCombo();
+				}
+				ImGuiMCP::SameLine();
+				if (ImGuiMCP::Button("Copy##arccopy")) {
+					if (s_arcSrc != s_arcDst) {
+						*arcs[s_arcDst] = *arcs[s_arcSrc];
+						Presets::GetSingleton()->curvesDirty = true;
+					}
+				}
+				if (ImGuiMCP::IsItemHovered()) {
+					ImGuiMCP::SetTooltip("%s",
+						"Overwrites the destination arc with the source arc (in memory - "
+						"use Save... to keep it).");
+				}
+			}
+
 			ImGuiMCP::Spacing();
 			ImGuiMCP::TextColored(ImVec4(0.9f, 0.8f, 0.3f, 1.0f), "Vault arcs (up and OVER - ends past the obstacle)");
 			for (int i = 0; i < 3; ++i) {
