@@ -144,21 +144,28 @@ namespace F4Parkour
 		const auto& durations = a_vault ? vaultDurations : mantleDurations;
 		const auto& heights = a_vault ? vaultHeights : mantleHeights;
 
-		// MANTLES: the HIGH-tier time is reserved for genuinely HIGH
-		// mantles (height at or above the high tier). Below that, the
-		// duration blends only between the LOW and MID times — a mid-
-		// height mantle must not inherit the slow, deliberate high-mantle
-		// time just because it is near the high tier. The arc SHAPE still
-		// blends smoothly across all three tiers (ArcAt); only the
-		// duration holds at MID across the mid→high band.
+		// MANTLES: pick the time of the NEAREST tier, discretely — a
+		// mantle that looks high gets the high time, a mid one gets the
+		// mid time, a low one the low time. Blending the duration up
+		// toward the high tier made mid-height mantles feel sluggish
+		// (the original complaint); holding the whole mid→high band at
+		// the MID time then made genuinely tall mantles feel too fast
+		// (high mantles getting mid time). Nearest-tier bucketing has
+		// neither failure: the mid/high boundary sits at the midpoint of
+		// the two height sliders (~127 with the default 105/150), so
+		// anything materially taller than the mid tier gets the high
+		// time. The arc SHAPE still blends smoothly across tiers (ArcAt).
 		if (!a_vault) {
-			if (a_height >= heights[2]) return durations[2];
-			if (a_height <= heights[0]) return durations[0];
-			const float span = heights[1] - heights[0];
-			const float t = (a_height >= heights[1])
-				? 1.0f  // mid..just-below-high all use the MID time
-				: (span > 1e-3f ? (a_height - heights[0]) / span : 0.0f);
-			return durations[0] + (durations[1] - durations[0]) * t;
+			int best = 0;
+			float bestDist = std::fabs(a_height - heights[0]);
+			for (int i = 1; i < 3; ++i) {
+				const float d = std::fabs(a_height - heights[i]);
+				if (d < bestDist) {
+					bestDist = d;
+					best = i;
+				}
+			}
+			return durations[best];
 		}
 
 		int lo = 0, hi = 0;
