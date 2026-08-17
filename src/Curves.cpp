@@ -142,6 +142,25 @@ namespace F4Parkour
 	float FeelPreset::DurationFor(bool a_vault, float a_height) const
 	{
 		const auto& durations = a_vault ? vaultDurations : mantleDurations;
+		const auto& heights = a_vault ? vaultHeights : mantleHeights;
+
+		// MANTLES: the HIGH-tier time is reserved for genuinely HIGH
+		// mantles (height at or above the high tier). Below that, the
+		// duration blends only between the LOW and MID times — a mid-
+		// height mantle must not inherit the slow, deliberate high-mantle
+		// time just because it is near the high tier. The arc SHAPE still
+		// blends smoothly across all three tiers (ArcAt); only the
+		// duration holds at MID across the mid→high band.
+		if (!a_vault) {
+			if (a_height >= heights[2]) return durations[2];
+			if (a_height <= heights[0]) return durations[0];
+			const float span = heights[1] - heights[0];
+			const float t = (a_height >= heights[1])
+				? 1.0f  // mid..just-below-high all use the MID time
+				: (span > 1e-3f ? (a_height - heights[0]) / span : 0.0f);
+			return durations[0] + (durations[1] - durations[0]) * t;
+		}
+
 		int lo = 0, hi = 0;
 		float t = 0.0f;
 		TierBlend(a_vault, a_height, lo, hi, t);

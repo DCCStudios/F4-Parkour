@@ -67,6 +67,22 @@ namespace
 		}
 	}
 
+	// Zero the controller's fall bookkeeping. An air-start move hands the
+	// engine a synthetic downward push so the jump graph gets its landing
+	// and the pose resolves - but the controller's fallTime/fallStartHeight
+	// still describe the pre-move jump, so the engine's ProcessDamageImpacts
+	// (and impact-landing mods hooked there) treat the hand-off as a real
+	// hard fall onto authored motion. Clearing them keeps the soft landing
+	// (ground contact still resolves the graph) without the phantom impact.
+	void ClearFallState(RE::PlayerCharacter* a_player)
+	{
+		if (auto* cc = CharCtrl(a_player)) {
+			cc->fallTime = 0.0f;
+			cc->fallStartHeight = a_player->data.location.z;
+			cc->inAirPreMove = false;
+		}
+	}
+
 	// Pin the controller's ENTIRE grounded contract for the whole move.
 	// m_currentState alone proved insufficient (rotation persisted on
 	// pinned grounded moves): the engine also reads surface support,
@@ -305,7 +321,7 @@ namespace F4Parkour
 			const bool groundNear = Detection::GroundWithin(a_player, 25.0f);
 			const bool recentJump = Input::TimeSinceEngineJump() < 1.2f;
 			startedInAir = stateAir && (recentJump || !groundNear);
-			if (stateAir && !startedInAir) {
+			if (stateAir && !startedInAir && !a_dryRun) {
 				logger::info(
 					"[Mover] kInAir flicker overridden: ground under feet, no engine jump -> grounded start");
 			}
@@ -927,6 +943,7 @@ namespace F4Parkour
 		// real landing and the jump pose (and its camera pitch) resolves
 		// instead of sticking.
 		if (startedInAir) {
+			ClearFallState(a_player);
 			SetVelocity(a_player, { 0.0f, 0.0f, -60.0f });
 			logger::info("[Mover] Air-start move - resolving with natural landing");
 		}
