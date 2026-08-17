@@ -99,14 +99,22 @@ namespace
 		const RE::NiPoint3 down{ 0.0f, 0.0f, -1.0f };
 		float depth = 0.0f;
 		const int steps = static_cast<int>(a_maxDepth / kSweepStep) + 1;
+		// FOLLOW the terrain instead of demanding a flat shelf at lip
+		// height: on natural slopes (rocky hillsides) the surface keeps
+		// rising, which is standable continuation, not a thin top. The
+		// per-step band still breaks on cliffs, drops, and true walls
+		// (>15u jump over a 5u step = steeper than ~71 degrees).
+		float refZ = a_ledge.z;
 		for (int i = 1; i <= steps; ++i) {
 			RE::NiPoint3 start = Add(a_ledge, Mul(a_dir, static_cast<float>(i) * kSweepStep));
-			start.z = a_ledge.z + 30.0f;
+			start.z = refZ + 30.0f;
 			Raycast::RayHit hit{};
 			Raycast::CastDir(start, down, 60.0f, hit);
-			const bool onTop = hit.hit && std::fabs((start.z - hit.distance) - a_ledge.z) <= 15.0f;
+			const float surfZ = start.z - hit.distance;
+			const bool onTop = hit.hit && std::fabs(surfZ - refZ) <= 15.0f;
 			DbgRay(start, down, 60.0f, hit, onTop, nullptr);
 			if (!onTop) break;
+			refZ = surfZ;
 			depth = static_cast<float>(i) * kSweepStep;
 		}
 		return depth;
@@ -546,8 +554,20 @@ namespace
 			// whose origins sat inside overhanging collision - a move to
 			// it would TUNNEL through the obstruction (the column bug).
 			// One ray, charged before the heavy budget.
+			//
+			// Judged from where the mantle will actually START: closer
+			// than the align distance, the move first glides the capsule
+			// back, so visibility is measured from that aligned spot -
+			// hugging the wall no longer self-rejects the lip.
 			{
-				const RE::NiPoint3 head = { playerPos.x, playerPos.y, playerPos.z + Detection::kPlayerHeight - 10.0f };
+				RE::NiPoint3 losBase = { playerPos.x, playerPos.y, playerPos.z };
+				const float projLip = (ledgePoint.x - playerPos.x) * a_dir.x +
+				                      (ledgePoint.y - playerPos.y) * a_dir.y;
+				if (projLip < 32.0f) {
+					losBase.x = ledgePoint.x - a_dir.x * 32.0f;
+					losBase.y = ledgePoint.y - a_dir.y * 32.0f;
+				}
+				const RE::NiPoint3 head = { losBase.x, losBase.y, losBase.z + Detection::kPlayerHeight - 10.0f };
 				RE::NiPoint3 to = {
 					ledgePoint.x - head.x,
 					ledgePoint.y - head.y,
@@ -586,8 +606,14 @@ namespace
 				Raycast::RayHit obs{};
 				Raycast::CastDir(obsStart, a_dir, obsBack + 15.0f, obs);
 				const float minSpace = obsBack + 3.0f;
-				DbgRay(obsStart, a_dir, obsBack + 15.0f, obs, !(obs.hit && obs.distance < minSpace), "lip clr");
-				if (obs.hit && obs.distance < minSpace) {
+				// Rising ground behind the lip only counts as a WALL when
+				// it is too steep to stand on — a walkable continuation
+				// (natural slopes) is a terrain step: mantle onto it,
+				// then mantle again (SkyParkour climbs hillsides the
+				// same way, as chained steps).
+				const bool wall = obs.hit && obs.distance < minSpace && obs.normal.z < 0.55f;
+				DbgRay(obsStart, a_dir, obsBack + 15.0f, obs, !wall, "lip clr");
+				if (wall) {
 					DbgReject("mantle", "wall behind lip at step {} - trying further", i);
 					continue;
 				}
@@ -614,11 +640,14 @@ namespace
 			RE::NiPoint3 target = Add(ledgePoint, Mul(a_dir, standIn));
 			target.z = ledgePoint.z;
 			{
+				// Wide measurement band: on rising terrain the stand
+				// point sits well ABOVE the lip (the old +/-25 band left
+				// the target buried inside the hill).
 				RE::NiPoint3 tStart = target;
-				tStart.z = ledgePoint.z + 40.0f;
+				tStart.z = ledgePoint.z + 60.0f;
 				Raycast::RayHit tHit{};
-				Raycast::CastDir(tStart, down, 80.0f, tHit);
-				if (tHit.hit && std::fabs((tStart.z - tHit.distance) - ledgePoint.z) <= 25.0f) {
+				Raycast::CastDir(tStart, down, 120.0f, tHit);
+				if (tHit.hit && std::fabs((tStart.z - tHit.distance) - ledgePoint.z) <= 45.0f) {
 					target.z = tStart.z - tHit.distance;
 					if (tHit.normal.z < 0.45f) {
 						DbgReject("mantle", "stand point too steep (n.z {:.2f}) at step {} - trying further",

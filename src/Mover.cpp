@@ -302,6 +302,42 @@ namespace F4Parkour
 		startPos = { a_player->data.location.x, a_player->data.location.y, a_player->data.location.z };
 		dir = cand.approachDir;
 
+		// Standing too close under the lip is no longer a refusal: the
+		// move begins with a short ALIGN glide that walks the capsule
+		// back to a clean start distance — SkyParkour's authored start
+		// positions (ledge minus a back offset), done smoothly instead
+		// of by warp.
+		aligning = false;
+		if (a_kind == MoveKind::Mantle && !startedInAir) {
+			const RE::NiPoint3& lip = cand.mantleLedge;
+			const float proj = (lip.x - startPos.x) * dir.x + (lip.y - startPos.y) * dir.y;
+			constexpr float kMinStartDist = 32.0f;
+			if (proj < kMinStartDist) {
+				RE::NiPoint3 ideal = {
+					lip.x - dir.x * kMinStartDist,
+					lip.y - dir.y * kMinStartDist,
+					startPos.z
+				};
+				RE::NiPoint3 gStart = ideal;
+				gStart.z += 40.0f;
+				Raycast::RayHit g{};
+				if (Raycast::CastDir(gStart, { 0.0f, 0.0f, -1.0f }, 80.0f, g)) {
+					ideal.z = gStart.z - g.distance + 0.5f;
+				}
+				const float adx = ideal.x - startPos.x;
+				const float ady = ideal.y - startPos.y;
+				const float adz = ideal.z - startPos.z;
+				const float alignDist = std::sqrt(adx * adx + ady * ady + adz * adz);
+				if (alignDist > 2.0f) {
+					alignFrom = startPos;
+					startPos = ideal;
+					aligning = true;
+					alignT = 0.0f;
+					alignDuration = std::clamp(alignDist / 120.0f, 0.08f, 0.3f);
+				}
+			}
+		}
+
 		const bool vault = (kind == MoveKind::Vault);
 		const RE::NiPoint3& ledge = vault ? cand.vaultLedge : cand.mantleLedge;
 		const float height = vault ? cand.vaultHeight : cand.mantleHeight;
@@ -658,6 +694,30 @@ namespace F4Parkour
 			return;
 		}
 
+		// Align glide first: walk the capsule to the authored start,
+		// then let the arc clock begin.
+		if (aligning) {
+			alignT += a_dt;
+			const float ar = std::min(1.0f, alignDuration > 0.0f ? alignT / alignDuration : 1.0f);
+			const float as = ar * ar * (3.0f - 2.0f * ar);
+			RE::NiPoint3 apos{
+				alignFrom.x + (startPos.x - alignFrom.x) * as,
+				alignFrom.y + (startPos.y - alignFrom.y) * as,
+				alignFrom.z + (startPos.z - alignFrom.z) * as,
+			};
+			AssignPoint3A(a_player->data.location, apos);
+			PinGroundedState(a_player);
+			WarpController(a_player, apos);
+			a_player->Update3DPosition(true);
+			lastPos = apos;
+			hasLastPos = true;
+			if (ar >= 1.0f) {
+				aligning = false;
+			}
+			t = 0.0f;  // the arc starts after alignment completes
+			return;
+		}
+
 		const float s = preset.EasedProgress(kind == MoveKind::Vault, rawT);
 
 		// Intent conversion window: vault → mantle while still rising, if
@@ -954,6 +1014,7 @@ namespace F4Parkour
 		}
 		active = false;
 		correctionMode = false;
+		aligning = false;
 		phase = MovePhase::Idle;
 		kind = MoveKind::None;
 		hasLastPos = false;

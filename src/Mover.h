@@ -101,6 +101,10 @@ namespace F4Parkour
 		bool         earlySneakSent{ false };
 		bool         startedInAir{ false };  // real jump anim is playing
 		bool         correctionMode{ false };  // guard glide, not a real move
+		bool         aligning{ false };        // pre-move walk-back glide
+		float        alignT{ 0.0f };
+		float        alignDuration{ 0.0f };
+		RE::NiPoint3 alignFrom{};
 		float        correctionLift{ 0.0f };   // parabolic lift so the glide arcs over lips
 		bool         landingGuardValid{ false };
 		RE::NiPoint3 landingGuardPos{};
