@@ -506,23 +506,29 @@ namespace F4Parkour
 
 	bool Mover::ValidatePath(const RE::NiPoint3& a_ledge) const
 	{
-		// Sample the path and probe up (head) at each sample. Brink
+		// MANTLES: detection is the SOLE authority. MantleScan already
+		// proved everything about the target — the lip, the stand point,
+		// the 3x3 headroom footprint, lip-sky, and behind-lip clearance.
+		// This function's up-probe was a SECOND, CONFLICTING validator:
+		// it walks the arc's RISING leg and casts straight up, but that
+		// leg necessarily passes in FRONT of and BELOW any domed or
+		// leaning mass, so the probe hits the obstacle's own overhang and
+		// vetoed mantles detection had already blessed (the "mantle ledge
+		// + stand markers show but no ring / no trigger" bug). A mantle
+		// that detection accepted must never be second-guessed here — the
+		// rising leg is under kNoSim and passes through the face by
+		// design. Vaults keep the check: their path goes OVER an obstacle
+		// and mid-air clearance is real geometry the vault scan's
+		// endpoint tests do not fully cover.
+		if (kind == MoveKind::Mantle) {
+			return true;
+		}
+
+		// Sample the VAULT path and probe up (head) at each sample. Brink
 		// shipped with endpoint checks only; this is stricter and any
-		// solid hit vetoes activation.
-		//
-		// MANTLES validate only from the apex onward: the rising leg
-		// deliberately hugs (and, with kNoSim, passes through) the front
-		// face, and up-probes cast from inside that geometry return
-		// shape-dependent results — the same wall could pass or veto
-		// depending on its collision type, which read as "standing
-		// mantle randomly refuses". Detection has already proven lip
-		// sky, stand-point headroom, and behind-lip clearance for the
-		// on-top portion.
+		// solid hit over the crossing vetoes activation.
 		constexpr int kSamples = 8;
-		const int firstSample = (kind == MoveKind::Mantle)
-			? std::max(1, static_cast<int>(apexS * static_cast<float>(kSamples)))
-			: 1;
-		for (int i = firstSample; i < kSamples; ++i) {
+		for (int i = 1; i < kSamples; ++i) {
 			const float s = static_cast<float>(i) / kSamples;
 			const RE::NiPoint3 p = SamplePath(s);
 

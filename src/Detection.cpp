@@ -617,11 +617,13 @@ namespace
 				Raycast::CastDir(obsStart, a_dir, obsBack + 15.0f, obs);
 				const float minSpace = obsBack + 3.0f;
 				// Rising ground behind the lip only counts as a WALL when
-				// it is too steep to stand on — a walkable continuation
-				// (natural slopes) is a terrain step: mantle onto it,
-				// then mantle again (SkyParkour climbs hillsides the
-				// same way, as chained steps).
-				const bool wall = obs.hit && obs.distance < minSpace && obs.normal.z < 0.55f;
+				// it is NEAR-VERTICAL — a walkable OR clamberable rise
+				// (natural slopes, domed rock crests that curve up past
+				// the lip) is a terrain step: mantle onto it, then mantle
+				// again (SkyParkour climbs hillsides the same way, as
+				// chained steps). 0.35 ~= surfaces steeper than ~70deg
+				// block; everything shallower is treated as standable.
+				const bool wall = obs.hit && obs.distance < minSpace && obs.normal.z < 0.35f;
 				DbgRay(obsStart, a_dir, obsBack + 15.0f, obs, !wall, "lip clr");
 				if (wall) {
 					DbgReject("mantle", "wall behind lip at step {} - trying further", i);
