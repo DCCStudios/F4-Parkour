@@ -26,7 +26,7 @@ namespace
 
 	constexpr float kVaultLength = 100.0f;       // forward reach of the vault sweep
 	constexpr float kSweepStep = 5.0f;           // down-sweep spacing
-	constexpr int   kSweepIterations = 40;       // 200 units of forward coverage - matches the mantle reach so the indicator never promises a vault the sweep can't deliver
+	constexpr int   kSweepIterations = 20;       // 100 units of forward coverage - a vault is a close, running-over move; the mantle reach can be longer without a ring/activation mismatch because a vault's ring and activation both come from THIS sweep
 	constexpr int   kMantleFwdIterations = 40;   // 200 units of mantle coverage - a leaning rock at max height holds its crest far forward
 	constexpr float kMinLedgeFlatness = 0.5f;    // normal.z for a standable top
 
