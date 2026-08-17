@@ -192,6 +192,20 @@ namespace
 		const RE::NiPoint3 down{ 0.0f, 0.0f, -1.0f };
 		const RE::NiPoint3 up{ 0.0f, 0.0f, 1.0f };
 
+		// 0. The head-altitude ray origin must itself be FREE AIR: under
+		// an overhang (leaning rock, arch) it sits inside collision, and
+		// rays cast from inside convex shapes report NOTHING - the whole
+		// sweep then tunnels through the mass and offers a vault THROUGH
+		// it. Chest height is provably free (the capsule occupies it).
+		{
+			const RE::NiPoint3 chest = { playerPos.x, playerPos.y, playerPos.z + 60.0f };
+			Raycast::RayHit headFree{};
+			if (Raycast::CastDir(chest, up, Detection::kPlayerHeight - 55.0f, headFree)) {
+				DbgRay(chest, up, Detection::kPlayerHeight - 55.0f, headFree, false, "origin blocked");
+				return;
+			}
+		}
+
 		// 1. Head-height forward ray: the whole approach must be clear of
 		// anything tall (a wall past the vaulter means this is not a vault).
 		const RE::NiPoint3 fwdStart = { playerPos.x, playerPos.y, playerPos.z + Detection::kPlayerHeight };
@@ -299,6 +313,33 @@ namespace
 
 		const float topDepth = static_cast<float>(lastTopIdx - firstTopIdx + 1) * kSweepStep;
 		ledgePoint.z = playerPos.z + topHeight;
+
+		// Line to the ledge from the player's HEAD - a provably free
+		// origin. If solid mass sits between the head and the crossing
+		// point, the candidate came from tunneled rays (origins inside
+		// overhanging collision) and the "vault" would pass THROUGH the
+		// obstruction. Aimed 8u above the lip, stopped 12u short, so a
+		// flush wall or fence top never self-occludes.
+		{
+			const RE::NiPoint3 head = { playerPos.x, playerPos.y, playerPos.z + Detection::kPlayerHeight - 10.0f };
+			RE::NiPoint3 to = {
+				ledgePoint.x - head.x,
+				ledgePoint.y - head.y,
+				(ledgePoint.z + 8.0f) - head.z
+			};
+			const float len = std::sqrt(to.x * to.x + to.y * to.y + to.z * to.z);
+			if (len > 14.0f) {
+				to.x /= len;
+				to.y /= len;
+				to.z /= len;
+				Raycast::RayHit los{};
+				if (Raycast::CastDir(head, to, len - 12.0f, los)) {
+					DbgRay(head, to, len - 12.0f, los, false, "ledge occluded");
+					DbgReject("vault", "no line to the ledge (mass in between)");
+					return;
+				}
+			}
+		}
 
 		// 3. Landing validation (the "behind the object" rules). The
 		// landing point sits a full capsule radius + margin past the far
@@ -497,6 +538,31 @@ namespace
 				if (sky.hit && sky.distance < Detection::kCrouchHeight) {
 					DbgRay(skyStart, up, Detection::kCrouchHeight, sky, false, "lip sky");
 					continue;
+				}
+			}
+
+			// Line to the lip from the player's HEAD (provably free
+			// origin): mass in between means this lip was found by rays
+			// whose origins sat inside overhanging collision - a move to
+			// it would TUNNEL through the obstruction (the column bug).
+			// One ray, charged before the heavy budget.
+			{
+				const RE::NiPoint3 head = { playerPos.x, playerPos.y, playerPos.z + Detection::kPlayerHeight - 10.0f };
+				RE::NiPoint3 to = {
+					ledgePoint.x - head.x,
+					ledgePoint.y - head.y,
+					(ledgePoint.z + 8.0f) - head.z
+				};
+				const float len = std::sqrt(to.x * to.x + to.y * to.y + to.z * to.z);
+				if (len > 14.0f) {
+					to.x /= len;
+					to.y /= len;
+					to.z /= len;
+					Raycast::RayHit los{};
+					if (Raycast::CastDir(head, to, len - 12.0f, los)) {
+						DbgRay(head, to, len - 12.0f, los, false, "lip occluded");
+						continue;
+					}
 				}
 			}
 
