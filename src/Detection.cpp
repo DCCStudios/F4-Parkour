@@ -540,11 +540,21 @@ namespace
 			// heavy budget before the sweep ever reached the crest
 			// ("gave up after N lips" with every reject reading "head").
 			{
+				// BURIED-lip test only: solid mass within ~30u straight
+				// above the lip. The original full-crouch-height version
+				// rejected every lip under a rounded crest or mid-face
+				// bulge - the stacked "lip sky" columns on the Sanctuary
+				// rock - including CROUCH-ONLY candidates that
+				// MeasureHeadroom's footprint grid would have accepted.
+				// Real headroom judgement (stand / crouch / none) stays
+				// with that grid, inside the heavy budget this precheck
+				// exists to protect.
+				constexpr float kBuriedLip = 30.0f;
 				RE::NiPoint3 skyStart = Add(ledgePoint, RE::NiPoint3{ 0.0f, 0.0f, 5.0f });
 				Raycast::RayHit sky{};
-				Raycast::CastDir(skyStart, up, Detection::kCrouchHeight, sky);
-				if (sky.hit && sky.distance < Detection::kCrouchHeight) {
-					DbgRay(skyStart, up, Detection::kCrouchHeight, sky, false, "lip sky");
+				Raycast::CastDir(skyStart, up, kBuriedLip, sky);
+				if (sky.hit && sky.distance < kBuriedLip) {
+					DbgRay(skyStart, up, kBuriedLip, sky, false, "lip sky");
 					continue;
 				}
 			}
