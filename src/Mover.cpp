@@ -260,7 +260,19 @@ namespace F4Parkour
 		if (a_kind == MoveKind::Mantle && !a_candidate.mantleEligible) return false;
 
 		// Snapshot the preset: menu edits must never touch a live move.
-		preset = Presets::GetSingleton()->Active();
+		// DRY-RUNS reuse the last snapshot for a short while instead of
+		// re-copying the curve vectors 20x/sec - those copies were
+		// constant heap churn through the replacement memory manager and
+		// an unsynchronized read against the menu thread's edits. A real
+		// activation always takes a fresh copy.
+		{
+			static std::chrono::steady_clock::time_point s_lastCopy{};
+			const auto now = std::chrono::steady_clock::now();
+			if (!a_dryRun || std::chrono::duration<float>(now - s_lastCopy).count() > 0.25f) {
+				preset = Presets::GetSingleton()->Active();
+				s_lastCopy = now;
+			}
+		}
 
 		cand = a_candidate;
 		kind = a_kind;
