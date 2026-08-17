@@ -147,14 +147,45 @@ namespace
 	// One big draggable graph per height tier. The arc IS the move, seen
 	// from the side: x = time across the move, y = height from where you
 	// started (bottom) up to the apex over the ledge (top). Drag points;
-	// double-click empty space to add one; right-click a point to remove
-	// it. Endpoints stay pinned to the start/end of the move in time.
-	struct ArcDrag
+	// drag on empty space to box-select; a selection of points moves
+	// together; double-click empty space to add one; right-click a point
+	// to remove it. Endpoints stay pinned to the start/end of the move.
+	//
+	// Only one editor is ever interacted with at a time, so a single
+	// global state keyed by the curve pointer suffices.
+	enum class ArcMode { None, Point, Multi, Box };
+	struct ArcEdit
 	{
-		Curve* curve{ nullptr };
-		int    index{ -1 };
+		// Persistent selection (survives across frames, independent of a
+		// live drag).
+		Curve*           selCurve{ nullptr };
+		std::vector<int> selected;
+
+		// Active drag.
+		Curve*  dragCurve{ nullptr };
+		ArcMode mode{ ArcMode::None };
+		int     pointIdx{ -1 };                        // Point mode
+		ImVec2  anchor{};                              // Multi/Box: mouse at start (screen px)
+		std::vector<std::array<float, 2>> orig;        // Multi: snapshot of all points at drag start
+
+		bool IsSelected(const Curve* a_c, int a_i) const
+		{
+			if (selCurve != a_c) return false;
+			for (int s : selected) {
+				if (s == a_i) return true;
+			}
+			return false;
+		}
+		void ClearSelection() { selCurve = nullptr; selected.clear(); }
+		void EndDrag()
+		{
+			dragCurve = nullptr;
+			mode = ArcMode::None;
+			pointIdx = -1;
+			orig.clear();
+		}
 	};
-	ArcDrag s_arcDrag{};
+	ArcEdit s_arc{};
 
 	void DrawArcEditor(const char* a_label, Curve& a_curve, float a_durationSeconds)
 	{
@@ -237,19 +268,59 @@ namespace
 		}
 
 		bool changed = false;
-		const bool draggingThis = (s_arcDrag.curve == &a_curve);
+		const int  n = static_cast<int>(a_curve.points.size());
+		const bool draggingThis = (s_arc.dragCurve == &a_curve);
 
-		if (hoveredCanvas && ImGuiMCP::IsMouseClicked(0, false) && nearest >= 0) {
-			s_arcDrag.curve = &a_curve;
-			s_arcDrag.index = nearest;
+		// Double-click empty space: add a point there. Handled before the
+		// press-to-start logic so a double-click never also opens a box.
+		if (hoveredCanvas && nearest < 0 && ImGuiMCP::IsMouseDoubleClicked(0)) {
+			a_curve.points.push_back({ mx, my });
+			a_curve.Sanitize(false, 0.0f, 1.0f);
+			s_arc.ClearSelection();  // indices shift on structural change
+			s_arc.EndDrag();
+			changed = true;
 		}
-		if (draggingThis && ImGuiMCP::IsMouseDown(0)) {
-			const int i = s_arcDrag.index;
-			if (i >= 0 && i < static_cast<int>(a_curve.points.size())) {
+		// Right-click a point: remove it (endpoints stay).
+		else if (hoveredCanvas && nearest > 0 && nearest + 1 < n &&
+			ImGuiMCP::IsMouseClicked(1, false) && a_curve.points.size() > 2) {
+			a_curve.points.erase(a_curve.points.begin() + nearest);
+			a_curve.Sanitize(false, 0.0f, 1.0f);
+			s_arc.ClearSelection();
+			changed = true;
+		}
+		// Press: begin a drag (single point / whole selection / box).
+		else if (hoveredCanvas && ImGuiMCP::IsMouseClicked(0, false)) {
+			if (nearest >= 0) {
+				if (s_arc.IsSelected(&a_curve, nearest) && s_arc.selected.size() > 1) {
+					// Grabbed a point that is part of a multi-selection:
+					// move the whole selection.
+					s_arc.dragCurve = &a_curve;
+					s_arc.mode = ArcMode::Multi;
+					s_arc.anchor = mouse;
+					s_arc.orig.assign(a_curve.points.begin(), a_curve.points.end());
+				} else {
+					// A lone point: select just it and drag it.
+					s_arc.selCurve = &a_curve;
+					s_arc.selected.assign(1, nearest);
+					s_arc.dragCurve = &a_curve;
+					s_arc.mode = ArcMode::Point;
+					s_arc.pointIdx = nearest;
+				}
+			} else {
+				// Empty space: start a box-select (or a click that clears).
+				s_arc.dragCurve = &a_curve;
+				s_arc.mode = ArcMode::Box;
+				s_arc.anchor = mouse;
+			}
+		}
+
+		// --- Point mode: drag one point ---
+		if (draggingThis && s_arc.mode == ArcMode::Point && ImGuiMCP::IsMouseDown(0)) {
+			const int i = s_arc.pointIdx;
+			if (i >= 0 && i < n) {
 				auto& pt = a_curve.points[i];
 				pt[1] = my;
-				// Endpoints keep their time; interior points stay ordered.
-				if (i > 0 && i + 1 < static_cast<int>(a_curve.points.size())) {
+				if (i > 0 && i + 1 < n) {
 					const float loX = a_curve.points[i - 1][0] + 0.02f;
 					const float hiX = a_curve.points[i + 1][0] - 0.02f;
 					pt[0] = std::clamp(mx, loX, hiX);
@@ -257,34 +328,98 @@ namespace
 				changed = true;
 			}
 		}
+
+		// --- Multi mode: move the whole selection by one delta ---
+		if (draggingThis && s_arc.mode == ArcMode::Multi && ImGuiMCP::IsMouseDown(0) &&
+			static_cast<int>(s_arc.orig.size()) == n) {
+			float ddy = -(mouse.y - s_arc.anchor.y) / h;  // screen y is inverted
+			float ddx = (mouse.x - s_arc.anchor.x) / w;
+
+			// Clamp the shared dy so no selected point leaves [0,1].
+			float dyLo = -1.0f, dyHi = 1.0f;
+			for (int i : s_arc.selected) {
+				if (i < 0 || i >= n) continue;
+				dyLo = std::max(dyLo, 0.0f - s_arc.orig[i][1]);
+				dyHi = std::min(dyHi, 1.0f - s_arc.orig[i][1]);
+			}
+			ddy = std::clamp(ddy, dyLo, dyHi);
+
+			// Clamp the shared dx: a selected ENDPOINT pins x entirely
+			// (endpoints keep their time); interior selected points may
+			// not cross a NON-selected neighbour, which also guarantees
+			// the point order never changes, so selection indices stay
+			// valid across Sanitize.
+			bool  lockX = false;
+			float dxLo = -1.0f, dxHi = 1.0f;
+			for (int i : s_arc.selected) {
+				if (i <= 0 || i >= n - 1) { lockX = true; break; }
+				const float lw = s_arc.IsSelected(&a_curve, i - 1) ? -1.0e9f : s_arc.orig[i - 1][0] + 0.02f;
+				const float rw = s_arc.IsSelected(&a_curve, i + 1) ? 1.0e9f : s_arc.orig[i + 1][0] - 0.02f;
+				dxLo = std::max(dxLo, lw - s_arc.orig[i][0]);
+				dxHi = std::min(dxHi, rw - s_arc.orig[i][0]);
+			}
+			const float dx = lockX ? 0.0f : std::clamp(ddx, dxLo, dxHi);
+
+			for (int i : s_arc.selected) {
+				if (i < 0 || i >= n) continue;
+				a_curve.points[i][1] = std::clamp(s_arc.orig[i][1] + ddy, 0.0f, 1.0f);
+				if (i > 0 && i < n - 1) {
+					a_curve.points[i][0] = s_arc.orig[i][0] + dx;
+				}
+			}
+			changed = true;
+		}
+
+		// --- Box mode: draw the marquee while dragging ---
+		if (draggingThis && s_arc.mode == ArcMode::Box && dl && ImGuiMCP::IsMouseDown(0)) {
+			const ImVec2 bmin{ std::min(s_arc.anchor.x, mouse.x), std::min(s_arc.anchor.y, mouse.y) };
+			const ImVec2 bmax{ std::max(s_arc.anchor.x, mouse.x), std::max(s_arc.anchor.y, mouse.y) };
+			ImDrawListManager::AddRectFilled(dl, bmin, bmax, IM_COL32(90, 170, 255, 40), 0.0f, 0);
+			ImDrawListManager::AddRect(dl, bmin, bmax, IM_COL32(120, 200, 255, 200), 0.0f, 0, 1.5f);
+		}
+
+		// --- Release: finalize whichever drag was active ---
 		if (draggingThis && ImGuiMCP::IsMouseReleased(0)) {
-			s_arcDrag = ArcDrag{};
-			a_curve.Sanitize(false, 0.0f, 1.0f);
-			changed = true;
+			if (s_arc.mode == ArcMode::Box) {
+				const float travel = std::fabs(mouse.x - s_arc.anchor.x) + std::fabs(mouse.y - s_arc.anchor.y);
+				if (travel < 4.0f) {
+					s_arc.ClearSelection();  // a click on empty space clears
+				} else {
+					const ImVec2 bmin{ std::min(s_arc.anchor.x, mouse.x), std::min(s_arc.anchor.y, mouse.y) };
+					const ImVec2 bmax{ std::max(s_arc.anchor.x, mouse.x), std::max(s_arc.anchor.y, mouse.y) };
+					s_arc.selCurve = &a_curve;
+					s_arc.selected.clear();
+					for (int i = 0; i < n; ++i) {
+						const float px = plotMin.x + a_curve.points[i][0] * w;
+						const float py = plotMax.y - std::clamp(a_curve.points[i][1], 0.0f, 1.0f) * h;
+						if (px >= bmin.x && px <= bmax.x && py >= bmin.y && py <= bmax.y) {
+							s_arc.selected.push_back(i);
+						}
+					}
+					if (s_arc.selected.empty()) s_arc.ClearSelection();
+				}
+			} else if (s_arc.mode == ArcMode::Point || s_arc.mode == ArcMode::Multi) {
+				a_curve.Sanitize(false, 0.0f, 1.0f);
+				changed = true;
+			}
+			s_arc.EndDrag();
 		}
 
-		// Double-click empty space: add a point there.
-		if (hoveredCanvas && nearest < 0 && ImGuiMCP::IsMouseDoubleClicked(0)) {
-			a_curve.points.push_back({ mx, my });
-			a_curve.Sanitize(false, 0.0f, 1.0f);
-			changed = true;
-		}
-		// Right-click a point: remove it (endpoints stay).
-		if (hoveredCanvas && nearest > 0 && nearest + 1 < static_cast<int>(a_curve.points.size()) &&
-			ImGuiMCP::IsMouseClicked(1, false) && a_curve.points.size() > 2) {
-			a_curve.points.erase(a_curve.points.begin() + nearest);
-			a_curve.Sanitize(false, 0.0f, 1.0f);
-			changed = true;
-		}
-
-		// Point markers drawn after input so the hovered one can highlight.
+		// Point markers drawn after input so the hovered/selected ones can
+		// highlight. Selected points get a green fill + ring.
 		if (dl) {
-			for (int i = 0; i < static_cast<int>(a_curve.points.size()); ++i) {
+			for (int i = 0; i < n; ++i) {
 				const float px = plotMin.x + a_curve.points[i][0] * w;
 				const float py = plotMax.y - std::clamp(a_curve.points[i][1], 0.0f, 1.0f) * h;
-				const bool hot = (i == nearest) || (draggingThis && i == s_arcDrag.index);
-				ImDrawListManager::AddCircleFilled(dl, ImVec2{ px, py }, hot ? 7.0f : 5.0f,
-					hot ? IM_COL32(255, 235, 120, 255) : IM_COL32(255, 210, 80, 255), 12);
+				const bool sel = s_arc.IsSelected(&a_curve, i);
+				const bool hot = (i == nearest) || (draggingThis && s_arc.mode == ArcMode::Point && i == s_arc.pointIdx);
+				const ImU32 col = sel ? IM_COL32(110, 235, 150, 255)
+					: hot ? IM_COL32(255, 235, 120, 255)
+					      : IM_COL32(255, 210, 80, 255);
+				ImDrawListManager::AddCircleFilled(dl, ImVec2{ px, py }, (sel || hot) ? 7.0f : 5.0f, col, 12);
+				if (sel) {
+					ImDrawListManager::AddCircle(dl, ImVec2{ px, py }, 10.0f, IM_COL32(150, 255, 190, 220), 14, 2.0f);
+				}
 			}
 		}
 
@@ -297,7 +432,7 @@ namespace
 		}
 		ImGuiMCP::TextColored(ImVec4(0.65f, 0.65f, 0.7f, 1.0f), "%s", coords.c_str());
 		ImGuiMCP::TextColored(ImVec4(0.5f, 0.5f, 0.55f, 1.0f),
-			"drag points | double-click: add | right-click: remove");
+			"drag point | drag empty: box-select | selected move together | double-click: add | right-click: remove");
 		ImGuiMCP::Spacing();
 
 		if (changed) {
