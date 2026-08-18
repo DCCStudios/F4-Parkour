@@ -78,6 +78,7 @@ namespace F4Parkour
 		freezeDetection = getB("Debug", "bFreezeDetection", freezeDetection);
 		moverTimeScale  = getF("Debug", "fMoverTimeScale", moverTimeScale);
 		watchdogEnabled = getB("Debug", "bWatchdogEnabled", watchdogEnabled);
+		warpSceneEachFrame = getB("Debug", "bWarpSceneEachFrame", warpSceneEachFrame);
 
 		// Clamps for values that feed math directly.
 		detectionInterval   = std::clamp(detectionInterval, 0.016f, 0.5f);
@@ -171,6 +172,7 @@ namespace F4Parkour
 		setB("Debug", "bFreezeDetection", freezeDetection);
 		setF("Debug", "fMoverTimeScale", moverTimeScale);
 		setB("Debug", "bWatchdogEnabled", watchdogEnabled);
+		setB("Debug", "bWarpSceneEachFrame", warpSceneEachFrame);
 
 		if (ini.SaveFile(kINIPath) < 0) {
 			logger::warn("[Settings] Failed to write {}", kINIPath);

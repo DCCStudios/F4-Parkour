@@ -838,6 +838,11 @@ namespace
 		CheckboxTip("In-flight watchdog", &s->watchdogEnabled,
 			"Per-frame obstruction probe during a move. Disable to compare against pure "
 			"endpoint validation (Brink shipped with collision fully off mid-move).");
+		CheckboxTip("Warp scene each move frame", &s->warpSceneEachFrame,
+			"OFF (default) updates the player's 3D as a normal MOVE each frame; ON forces "
+			"the TELEPORT path 30-60x per move, which hammers the culling caches and is a "
+			"suspected trigger for render-thread crashes. Turn ON only if the character "
+			"mesh visibly lags behind the capsule during a move.");
 
 		SectionHeader("Animation test (PlayIdle)",
 			"Per tier: instead of the melee action, play a raw idle .hkx directly when the "

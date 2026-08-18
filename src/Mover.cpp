@@ -703,7 +703,7 @@ namespace F4Parkour
 			AssignPoint3A(a_player->data.location, cpos);
 			PinGroundedState(a_player);
 			WarpController(a_player, cpos);
-			a_player->Update3DPosition(true);
+			a_player->Update3DPosition(Settings::GetSingleton()->warpSceneEachFrame);
 			if (hasLastPos && a_dt > 1.0e-4f) {
 				SetVelocity(a_player, {
 					(cpos.x - lastPos.x) / a_dt,
@@ -742,7 +742,7 @@ namespace F4Parkour
 			AssignPoint3A(a_player->data.location, apos);
 			PinGroundedState(a_player);
 			WarpController(a_player, apos);
-			a_player->Update3DPosition(true);
+			a_player->Update3DPosition(Settings::GetSingleton()->warpSceneEachFrame);
 			lastPos = apos;
 			hasLastPos = true;
 			if (ar >= 1.0f) {
@@ -842,7 +842,12 @@ namespace F4Parkour
 		// Camera dip: DISABLED for now per playtest feedback (the pivot
 		// module stays in place for a future pass; nothing calls it).
 
-		a_player->Update3DPosition(true);
+		// Per-frame scene update uses the "moved" path by default (not the
+		// teleport/warp path) — forcing warp 30-60x per mantle churned the
+		// pre-cull/cull caches (BSPreCulledObjects render-thread crash).
+		// The controller is warped separately above, so the visual still
+		// follows; the flag reverts to the teleport path if the mesh trails.
+		a_player->Update3DPosition(Settings::GetSingleton()->warpSceneEachFrame);
 
 		// Velocity-follow: give the controller the PATH velocity instead
 		// of pinning it to zero. The sprint/move state machinery keeps

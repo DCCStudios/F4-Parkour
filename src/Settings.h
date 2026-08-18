@@ -90,6 +90,13 @@ namespace F4Parkour
 		bool  freezeDetection{ false };
 		float moverTimeScale{ 1.0f };       // slow-motion mover for inspection
 		bool  watchdogEnabled{ true };
+		// Per-frame scene update during a move: false = "moved" (smooth,
+		// low culling churn); true = "warp"/teleport path (legacy). Every
+		// mover frame passing the teleport path forced the pre-cull/cull
+		// caches to rebuild 30-60x per mantle - a plausible trigger for
+		// the BSPreCulledObjects render-thread crash. Default false; flip
+		// true only if the character mesh visibly trails the capsule.
+		bool  warpSceneEachFrame{ false };
 
 	private:
 		Settings() = default;
