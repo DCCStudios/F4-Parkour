@@ -281,7 +281,24 @@ namespace F4Parkour
 		// it can never fire on an unrelated later idle.
 		skipEquipArmed.store(false, std::memory_order_relaxed);
 
-		if (testIdle && (slot2 || slot1)) {
+		// Automatic weapon-away idles: with the weapon sheathed (hands
+		// free), a vault plays Vault.hkx at ANY height and a mantle plays
+		// Mantle.hkx at any tier EXCEPT high — both from the same folder
+		// as the test idles. Any ticked debug test-idle slot for this
+		// move/tier OVERRIDES these (the debug tools stay authoritative).
+		const bool weaponAway = a_player->weaponState == RE::WEAPON_STATE::kSheathed;
+		const bool autoIdle = !slot2 && !slot1 && weaponAway && (vault || a_tier < 2);
+		std::string autoPath;
+		if (autoIdle) {
+			const std::string& base = settings->testIdlePath;
+			const auto cut = base.find_last_of("\\/");
+			autoPath = (cut == std::string::npos)
+				? std::string("Meshes\\Actors\\Character\\Animations\\F4Parkour\\")
+				: base.substr(0, cut + 1);
+			autoPath += vault ? "Vault.hkx" : "Mantle.hkx";
+		}
+
+		if (testIdle && (slot2 || slot1 || autoIdle)) {
 			// File-based dynamic idles route through a dyn_* anim event on
 			// the graph; an empty event plays nothing. SetupSpecialIdle is
 			// the exact engine path weapon-inspect mods ride for their
@@ -289,8 +306,9 @@ namespace F4Parkour
 			// has to be authored for the first-person rig to look right
 			// there. testConditions=false skips the idle-condition check
 			// (one less refusal path for a test tool).
-			const std::string& path = slot2 ? settings->testIdle2Path : settings->testIdlePath;
-			const std::string& evt  = slot2 ? settings->testIdle2Event : settings->testIdleEvent;
+			const std::string& path = autoIdle ? autoPath :
+				slot2 ? settings->testIdle2Path : settings->testIdlePath;
+			const std::string& evt  = (autoIdle || !slot2) ? settings->testIdleEvent : settings->testIdle2Event;
 			testIdle->animFileName = path.c_str();
 			testIdle->animEventName = evt.c_str();
 			testIdle->behaviorGraphName = settings->testIdleBehavior.c_str();
@@ -317,15 +335,16 @@ namespace F4Parkour
 						a_player->currentProcess->middleHigh->charController->context.m_currentState);
 				}
 				logger::warn(
-					"[AnimHijack] Test idle slot {} REFUSED '{}' (event '{}') - gunState={} meleeState={} hkState={} weaponDrawn={}",
-					slot2 ? 2 : 1, path, evt,
+					"[AnimHijack] {} idle REFUSED '{}' (event '{}') - gunState={} meleeState={} hkState={} weaponDrawn={}",
+					autoIdle ? "Auto" : (slot2 ? "Test slot 2" : "Test slot 1"), path, evt,
 					static_cast<std::uint32_t>(a_player->gunState),
 					static_cast<std::uint32_t>(a_player->meleeAttackState),
 					hkState,
 					static_cast<std::uint32_t>(a_player->weaponState));
 			} else {
-				logger::info("[AnimHijack] Test idle slot {} '{}' (event '{}') -> true{}",
-					slot2 ? 2 : 1, path, evt, slot2 ? " [equip-skip armed]" : "");
+				logger::info("[AnimHijack] {} idle '{}' (event '{}') -> true{}",
+					autoIdle ? "Auto" : (slot2 ? "Test slot 2" : "Test slot 1"),
+					path, evt, slot2 ? " [equip-skip armed]" : "");
 			}
 		} else if (settings->playMeleeAnim && actionMelee) {
 			const bool ok = a_player->PerformAction(actionMelee, nullptr);
