@@ -24,8 +24,16 @@ namespace F4Parkour
 		bool  autoParkourSprint{ false };   // auto-vault while sprinting
 		bool  autoStepUp{ false };          // auto-vault knee-height obstacles
 		bool  allowInAir{ true };           // air-mantle after a jump
+		bool  allowAirVault{ true };        // also air-VAULT (not just mantle) in the air
+		bool  autoAirGrab{ false };         // auto-grab a ledge while falling (Dying Light assist)
+		float airAutoGrabDelay{ 0.3f };     // fallTime before auto-grab arms
 		bool  allowThirdPerson{ true };
 		bool  indicatorEnabled{ true };     // HUD ring on above-LOW candidates
+		// High-mantle camera director (first person): keeps the view level
+		// and pulls it out of geometry so the rising eye never clips the
+		// ledge. Scoped to tier-2 mantles only.
+		bool  highMantleCameraDirector{ true };
+		float camCollisionSkin{ 12.0f };    // keep the view this far off surfaces
 		bool  requireForward{ true };       // contextual rule: forward input
 		float lookConeDeg{ 35.0f };         // must be looking at the ledge
 		float detectionInterval{ 0.05f };   // seconds between scans

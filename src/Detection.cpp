@@ -793,7 +793,10 @@ namespace F4Parkour::Detection
 		out.approachDir = dir;
 		out.fromAir = a_fromAir;
 
-		if (!a_fromAir) {
+		// Vault scans on the ground always; in the air only when air-vault
+		// is enabled (a mid-flight clear of a low obstacle). Mantle scans
+		// in both — air mantle is the primary air move.
+		if (!a_fromAir || settings->allowAirVault) {
 			VaultScan(a_player, dir, out);
 		}
 		MantleScan(a_player, dir, a_fromAir, out);

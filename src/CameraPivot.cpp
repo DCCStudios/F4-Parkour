@@ -1,5 +1,6 @@
 #include "PCH.h"
 #include "CameraPivot.h"
+#include "Raycast.h"
 
 // ============================================================
 // Ported from FPCameraOverhaul's CameraSettle FP-skeleton path:
@@ -151,6 +152,56 @@ namespace F4Parkour::CameraPivot
 		const RE::NiPoint3 rotatedQ = MatMulPoint(Rt, q);
 		inserted->local.translate = { q.x - rotatedQ.x, q.y - rotatedQ.y, q.z - rotatedQ.z };
 		inserted->local.rotate = R;
+	}
+
+	void Collision(RE::PlayerCharacter* a_player, float a_skin)
+	{
+		if (!IsFirstPerson() || !a_player) return;
+		auto* inserted = FindOrInsertPivot(a_player, true);
+		if (!inserted || !inserted->parent) return;
+
+		// The view point is the FP "Camera" bone (now a child of the
+		// inserted node). Read its world position.
+		const RE::BSFixedString pivotName{ kPivotBoneName };
+		auto* camObj = inserted->GetObjectByName(pivotName);
+		if (!camObj) return;
+		const RE::NiPoint3 camWorld = camObj->world.translate;
+
+		// Anchor: chest height above the feet — provably inside the capsule
+		// and therefore clear of the geometry we are climbing.
+		const RE::NiPoint3 anchor{
+			a_player->data.location.x,
+			a_player->data.location.y,
+			a_player->data.location.z + 40.0f
+		};
+
+		RE::NiPoint3 delta{ camWorld.x - anchor.x, camWorld.y - anchor.y, camWorld.z - anchor.z };
+		const float len = std::sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z);
+
+		RE::NiPoint3 targetLocal{ 0.0f, 0.0f, 0.0f };
+		if (len > 1.0f) {
+			const RE::NiPoint3 dir{ delta.x / len, delta.y / len, delta.z / len };
+			Raycast::RayHit hit{};
+			if (Raycast::CastDir(anchor, dir, len + a_skin, hit) && hit.hit && hit.distance < len) {
+				// Pull the view in toward the anchor so it sits a skin's
+				// width off the surface. World offset, then expressed in the
+				// inserted node's PARENT frame (this codebase's NiMatrix3
+				// convention: world->parentFrame = M * v, see header).
+				const float pull = (len - hit.distance) + a_skin;
+				const RE::NiPoint3 worldOffset{ -dir.x * pull, -dir.y * pull, -dir.z * pull };
+				targetLocal = MatMulPoint(inserted->parent->world.rotate, worldOffset);
+			}
+		}
+
+		// Ease toward the target offset so the view never pops.
+		const RE::NiPoint3 cur = inserted->local.translate;
+		const float k = 0.35f;
+		inserted->local.translate = {
+			cur.x + (targetLocal.x - cur.x) * k,
+			cur.y + (targetLocal.y - cur.y) * k,
+			cur.z + (targetLocal.z - cur.z) * k
+		};
+		inserted->local.rotate.MakeIdentity();
 	}
 
 	void Clear(RE::PlayerCharacter* a_player)

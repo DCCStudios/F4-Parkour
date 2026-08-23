@@ -217,7 +217,12 @@ namespace F4Parkour
 			const bool grounded = Detection::IsOnGround(a_player) ||
 				Input::TimeSinceGrounded() <= settings->coyoteWindow ||
 				Detection::GroundWithin(a_player, 25.0f);
-			const bool airborne = !grounded && Detection::IsInAir(a_player);
+			// Just-jumped carve-out: once a real engine jump has launched,
+			// arm the air scan even while GroundWithin(25) is briefly still
+			// true — an ascending jump clears 25u fast and this is the
+			// window where a mid-air grab should start looking early.
+			const bool justJumped = Input::TimeSinceEngineJump() < 0.6f && Detection::IsInAir(a_player);
+			const bool airborne = (!grounded || justJumped) && Detection::IsInAir(a_player);
 
 			// Scan UNCONDITIONALLY while grounded (SkyParkour's model).
 			// Every intent gate ever placed above the scan produced the
@@ -246,7 +251,11 @@ namespace F4Parkour
 				candidateAge = 0.0f;
 			} else {
 				candidateAge += settings->detectionInterval;
-				if (candidateAge > 0.35f) {
+				// Longer grace in the air: a mid-air jump press has to find a
+				// candidate that may have flickered off for a tick, and the
+				// player crosses the scan volume fast while falling.
+				const float grace = airborne ? 0.5f : 0.35f;
+				if (candidateAge > grace) {
 					candidate.Reset();
 				}
 			}
@@ -317,6 +326,16 @@ namespace F4Parkour
 				PublishDebugState(a_player, a_dt);
 				return;
 			}
+				// Auto air-grab (default OFF): once falling past the arm
+				// delay, grab a valid air candidate with no input - the
+				// Dying Light "reach and it catches" assist. SkyParkour does
+				// this for its Grab type at fallTime > 0.5.
+				if (settings->autoAirGrab &&
+					Input::TimeSinceGrounded() > settings->airAutoGrabDelay) {
+					TryActivate(a_player, MoveKind::None);
+					PublishDebugState(a_player, a_dt);
+					return;
+				}
 		}
 
 		// Auto triggers (both default OFF). Auto step-up covers only

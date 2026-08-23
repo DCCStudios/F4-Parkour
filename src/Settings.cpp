@@ -20,6 +20,11 @@ namespace F4Parkour
 		autoParkourSprint = getB("General", "bAutoParkourWhileSprinting", autoParkourSprint);
 		autoStepUp        = getB("General", "bAutoStepUp", autoStepUp);
 		allowInAir        = getB("General", "bAllowInAir", allowInAir);
+		allowAirVault     = getB("General", "bAllowAirVault", allowAirVault);
+		autoAirGrab       = getB("General", "bAutoAirGrab", autoAirGrab);
+		airAutoGrabDelay  = getF("General", "fAirAutoGrabDelay", airAutoGrabDelay);
+		highMantleCameraDirector = getB("General", "bHighMantleCameraDirector", highMantleCameraDirector);
+		camCollisionSkin  = getF("General", "fCamCollisionSkin", camCollisionSkin);
 		indicatorEnabled  = getB("General", "bIndicatorEnabled", indicatorEnabled);
 		allowThirdPerson  = getB("General", "bAllowThirdPerson", allowThirdPerson);
 		requireForward    = getB("General", "bRequireForwardInput", requireForward);
@@ -114,6 +119,11 @@ namespace F4Parkour
 		setB("General", "bAutoParkourWhileSprinting", autoParkourSprint);
 		setB("General", "bAutoStepUp", autoStepUp);
 		setB("General", "bAllowInAir", allowInAir);
+		setB("General", "bAllowAirVault", allowAirVault);
+		setB("General", "bAutoAirGrab", autoAirGrab);
+		setF("General", "fAirAutoGrabDelay", airAutoGrabDelay);
+		setB("General", "bHighMantleCameraDirector", highMantleCameraDirector);
+		setF("General", "fCamCollisionSkin", camCollisionSkin);
 		setB("General", "bIndicatorEnabled", indicatorEnabled);
 		setB("General", "bAllowThirdPerson", allowThirdPerson);
 		setB("General", "bRequireForwardInput", requireForward);

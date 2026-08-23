@@ -825,6 +825,13 @@ namespace F4Parkour
 			while (dYaw > 3.14159265f) dYaw -= 6.2831853f;
 			while (dYaw < -3.14159265f) dYaw += 6.2831853f;
 			a_player->data.angle.z += dYaw * k;
+
+			// High-mantle camera director (first person): keep the rising
+			// eye out of the ledge geometry it is climbing onto. Mantle
+			// only (the tier-2 leveling above still applies to vaults too).
+			if (kind == MoveKind::Mantle && settings->highMantleCameraDirector) {
+				CameraPivot::Collision(a_player, settings->camCollisionSkin);
+			}
 		}
 
 		// Carry the controller WITH the reference every frame — the

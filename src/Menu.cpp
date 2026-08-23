@@ -509,6 +509,15 @@ namespace
 		CheckboxTip("Allow in third person", &s->allowThirdPerson, "");
 		CheckboxTip("Allow while airborne", &s->allowInAir,
 			"Jump again in the air to grab and mantle a ledge (Brink-style air grab).");
+		CheckboxTip("Allow air vaults too", &s->allowAirVault,
+			"Also vault (not just mantle) while airborne - a mid-flight clear of a low "
+			"obstacle. Needs 'Allow while airborne'.");
+		CheckboxTip("Auto-grab while falling", &s->autoAirGrab,
+			"Automatically grab a ledge you are falling toward, no button press (Dying Light "
+			"reach-and-catch assist). Off = you must press jump in the air.");
+		CheckboxTip("High-mantle camera director", &s->highMantleCameraDirector,
+			"On a HIGH mantle in first person, pulls the view out of the ledge geometry so the "
+			"rising camera never clips through it. First person only.");
 		CheckboxTip("Show parkour indicator", &s->indicatorEnabled,
 			"Small ring on a ledge you can vault or mantle (SkyParkour-style cue). "
 			"Only shown for ledges above the LOW height - knee-high steps stay quiet.");
