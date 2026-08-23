@@ -333,11 +333,17 @@ namespace F4Parkour
 		// Authored-curve mode: a HIGH mantle rides the exported root
 		// trajectory of its animation (tools/export_root_curve.py), so the
 		// path and the clip are the same curve and cannot disagree — the
-		// STALKER ledge-grab architecture. Grounded starts only: air starts
-		// ride a real jump animation the authored clip does not match.
+		// STALKER ledge-grab architecture. AIR STARTS INCLUDED: the first
+		// in-game session proved jump-then-grab is THE natural high-mantle
+		// trigger (every logged tier-2 mantle was an air start, so a
+		// grounded-only gate locked the feature out entirely). The curve is
+		// relative to wherever the grab begins, and the measured-vs-nominal
+		// scaling absorbs the shorter remaining rise; air-start STATE
+		// handling (no grounded pin, natural landing at Finish) is
+		// orthogonal to the path source and unchanged.
 		authoredMode = false;
 		authored = nullptr;
-		if (a_kind == MoveKind::Mantle && !startedInAir &&
+		if (a_kind == MoveKind::Mantle &&
 			Settings::GetSingleton()->authoredHighMantle &&
 			NearestTier(preset.mantleHeights, a_candidate.mantleHeight) == 2) {
 			authored = AuthoredCurves::MantleHigh();
