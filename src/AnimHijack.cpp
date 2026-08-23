@@ -282,12 +282,15 @@ namespace F4Parkour
 		skipEquipArmed.store(false, std::memory_order_relaxed);
 
 		// Automatic weapon-away idles: with the weapon sheathed (hands
-		// free), a vault plays Vault.hkx at ANY height and a mantle plays
-		// Mantle.hkx at any tier EXCEPT high — both from the same folder
-		// as the test idles. Any ticked debug test-idle slot for this
-		// move/tier OVERRIDES these (the debug tools stay authoritative).
+		// free), a vault plays Vault.hkx at ANY height, a low/mid mantle
+		// plays Mantle.hkx, and a HIGH mantle plays Ledge.hkx (the
+		// authored-curve climb — the mover drives the player along that
+		// clip's exported root trajectory in lockstep) — all from the
+		// same folder as the test idles. Any ticked debug test-idle slot
+		// for this move/tier OVERRIDES these (the debug tools stay
+		// authoritative).
 		const bool weaponAway = a_player->weaponState == RE::WEAPON_STATE::kSheathed;
-		const bool autoIdle = !slot2 && !slot1 && weaponAway && (vault || a_tier < 2);
+		const bool autoIdle = !slot2 && !slot1 && weaponAway;
 		std::string autoPath;
 		if (autoIdle) {
 			const std::string& base = settings->testIdlePath;
@@ -295,7 +298,7 @@ namespace F4Parkour
 			autoPath = (cut == std::string::npos)
 				? std::string("Meshes\\Actors\\Character\\Animations\\F4Parkour\\")
 				: base.substr(0, cut + 1);
-			autoPath += vault ? "Vault.hkx" : "Mantle.hkx";
+			autoPath += vault ? "Vault.hkx" : (a_tier == 2 ? "Ledge.hkx" : "Mantle.hkx");
 		}
 
 		if (testIdle && (slot2 || slot1 || autoIdle)) {

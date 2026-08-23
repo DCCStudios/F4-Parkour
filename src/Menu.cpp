@@ -516,8 +516,13 @@ namespace
 			"Automatically grab a ledge you are falling toward, no button press (Dying Light "
 			"reach-and-catch assist). Off = you must press jump in the air.");
 		CheckboxTip("High-mantle camera director", &s->highMantleCameraDirector,
-			"On a HIGH mantle in first person, pulls the view out of the ledge geometry so the "
-			"rising camera never clips through it. First person only.");
+			"RETIRED procedural camera collision - it fought the climb animation for control of "
+			"the view. Kept only for A/B testing; leave off.");
+		CheckboxTip("Authored high-mantle curve", &s->authoredHighMantle,
+			"High mantles follow the Ledge.hkx animation's own exported root trajectory "
+			"(Curves/mantle_high.curve.json) in lockstep, scaled to the measured ledge - path "
+			"and animation cannot disagree. Falls back to the procedural arcs when the curve "
+			"file is missing.");
 		CheckboxTip("Show parkour indicator", &s->indicatorEnabled,
 			"Small ring on a ledge you can vault or mantle (SkyParkour-style cue). "
 			"Only shown for ledges above the LOW height - knee-high steps stay quiet.");

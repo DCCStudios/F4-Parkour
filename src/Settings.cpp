@@ -24,6 +24,7 @@ namespace F4Parkour
 		autoAirGrab       = getB("General", "bAutoAirGrab", autoAirGrab);
 		airAutoGrabDelay  = getF("General", "fAirAutoGrabDelay", airAutoGrabDelay);
 		highMantleCameraDirector = getB("General", "bHighMantleCameraDirector", highMantleCameraDirector);
+		authoredHighMantle = getB("General", "bAuthoredHighMantle", authoredHighMantle);
 		camCollisionSkin  = getF("General", "fCamCollisionSkin", camCollisionSkin);
 		indicatorEnabled  = getB("General", "bIndicatorEnabled", indicatorEnabled);
 		allowThirdPerson  = getB("General", "bAllowThirdPerson", allowThirdPerson);
@@ -123,6 +124,7 @@ namespace F4Parkour
 		setB("General", "bAutoAirGrab", autoAirGrab);
 		setF("General", "fAirAutoGrabDelay", airAutoGrabDelay);
 		setB("General", "bHighMantleCameraDirector", highMantleCameraDirector);
+		setB("General", "bAuthoredHighMantle", authoredHighMantle);
 		setF("General", "fCamCollisionSkin", camCollisionSkin);
 		setB("General", "bIndicatorEnabled", indicatorEnabled);
 		setB("General", "bAllowThirdPerson", allowThirdPerson);

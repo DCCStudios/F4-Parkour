@@ -330,13 +330,28 @@ namespace F4Parkour
 		startPos = { a_player->data.location.x, a_player->data.location.y, a_player->data.location.z };
 		dir = cand.approachDir;
 
+		// Authored-curve mode: a HIGH mantle rides the exported root
+		// trajectory of its animation (tools/export_root_curve.py), so the
+		// path and the clip are the same curve and cannot disagree — the
+		// STALKER ledge-grab architecture. Grounded starts only: air starts
+		// ride a real jump animation the authored clip does not match.
+		authoredMode = false;
+		authored = nullptr;
+		if (a_kind == MoveKind::Mantle && !startedInAir &&
+			Settings::GetSingleton()->authoredHighMantle &&
+			NearestTier(preset.mantleHeights, a_candidate.mantleHeight) == 2) {
+			authored = AuthoredCurves::MantleHigh();
+			authoredMode = authored != nullptr;
+		}
+
 		// Standing too close under the lip is no longer a refusal: the
 		// move begins with a short ALIGN glide that walks the capsule
 		// back to a clean start distance — SkyParkour's authored start
 		// positions (ledge minus a back offset), done smoothly instead
-		// of by warp.
+		// of by warp. Authored mode skips it: the animation starts where
+		// the player stands, and its forward scaling absorbs the distance.
 		aligning = false;
-		if (a_kind == MoveKind::Mantle && !startedInAir) {
+		if (a_kind == MoveKind::Mantle && !startedInAir && !authoredMode) {
 			const RE::NiPoint3& lip = cand.mantleLedge;
 			const float proj = (lip.x - startPos.x) * dir.x + (lip.y - startPos.y) * dir.y;
 			constexpr float kMinStartDist = 32.0f;
@@ -381,7 +396,7 @@ namespace F4Parkour
 		}
 		apexZ = ledge.z + clearance;
 		moveHeight = height;
-		apexS = ArcPeakX();
+		apexS = authoredMode ? authored->apexS : ArcPeakX();
 
 		// Belt-and-braces apex headroom probe: if something hangs over
 		// the arc's peak, flatten the arc under it rather than colliding.
@@ -425,6 +440,12 @@ namespace F4Parkour
 			const float floor_ = std::max(0.35f, duration * 0.55f);
 			const float target = std::clamp(speedMatched, floor_, duration);
 			duration += (target - duration) * match;
+		}
+		// Authored mode runs in LOCKSTEP with the clip: the animation plays
+		// at 1x, so the move takes exactly the clip's length — duration
+		// sliders and speed matching do not apply.
+		if (authoredMode) {
+			duration = authored->duration;
 		}
 
 		if (!ValidatePath(ledge)) {
@@ -474,8 +495,9 @@ namespace F4Parkour
 				cand.headroom == Headroom::CrouchOnly && !vault ? " (crouch-only)" : ""));
 		}
 
-		logger::info("[Mover] {} started: height={:.1f} tier={} duration={:.2f} entrySpeed={:.0f}",
-			vault ? "vault" : "mantle", height, tier, duration, entrySpeed);
+		logger::info("[Mover] {} started: height={:.1f} tier={} duration={:.2f} entrySpeed={:.0f}{}",
+			vault ? "vault" : "mantle", height, tier, duration, entrySpeed,
+			authoredMode ? " [authored curve]" : "");
 		return true;
 	}
 
@@ -499,6 +521,25 @@ namespace F4Parkour
 			end.x = preConvertEnd.x + (endPos.x - preConvertEnd.x) * endBlend;
 			end.y = preConvertEnd.y + (endPos.y - preConvertEnd.y) * endBlend;
 			end.z = preConvertEnd.z + (endPos.z - preConvertEnd.z) * endBlend;
+		}
+
+		// Authored mode: a_s is the RAW time fraction (no easing), and the
+		// sample decomposition maps straight onto measured geometry —
+		// horizontal progress follows the clip's forward fraction toward
+		// the (blended) end, vertical follows its rise fraction. The final
+		// sample is (fwd=1, up=1) by construction, so the move ends exactly
+		// at the landing with nothing left for Finish to snap.
+		if (authoredMode && authored) {
+			const auto smp = authored->At(a_s * duration);
+			const float latScale = std::max(0.0f, end.z - startPos.z) / authored->nominalUp;
+			RE::NiPoint3 p;
+			p.x = startPos.x + (end.x - startPos.x) * smp.fwd + dir.y * smp.lat * latScale;
+			p.y = startPos.y + (end.y - startPos.y) * smp.fwd - dir.x * smp.lat * latScale;
+			p.z = startPos.z + (end.z - startPos.z) * smp.up;
+			// The authored crouch dip scales with the measured rise; cap it
+			// so the capsule never sinks meaningfully into its own ground.
+			p.z = std::max(p.z, startPos.z - 6.0f);
+			return p;
 		}
 
 		RE::NiPoint3 p;
@@ -752,7 +793,9 @@ namespace F4Parkour
 			return;
 		}
 
-		const float s = preset.EasedProgress(kind == MoveKind::Vault, rawT);
+		// Authored mode samples by raw time — the clip's own pacing IS the
+		// easing, applying ours on top would desync path from animation.
+		const float s = authoredMode ? rawT : preset.EasedProgress(kind == MoveKind::Vault, rawT);
 
 		// Intent conversion window: vault → mantle while still rising, if
 		// forward was released (the player wants on top, not over).
@@ -1062,6 +1105,8 @@ namespace F4Parkour
 		active = false;
 		correctionMode = false;
 		aligning = false;
+		authoredMode = false;
+		authored = nullptr;
 		phase = MovePhase::Idle;
 		kind = MoveKind::None;
 		hasLastPos = false;
@@ -1075,6 +1120,8 @@ namespace F4Parkour
 		active = true;
 		phase = MovePhase::Committed;
 		kind = MoveKind::Mantle;  // benign curve source; correction bypasses SamplePath
+		authoredMode = false;
+		authored = nullptr;
 		startPos = { a_player->data.location.x, a_player->data.location.y, a_player->data.location.z };
 		endPos = a_target;
 		endBlend = 1.0f;

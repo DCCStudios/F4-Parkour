@@ -36,6 +36,10 @@ namespace F4Parkour
 		// superseded by the authored-curve mantle rework). Off by default,
 		// toggle kept for A/B only.
 		bool  highMantleCameraDirector{ false };
+		// High mantles follow the animation's exported root trajectory
+		// (Curves/mantle_high.curve.json) in lockstep with Ledge.hkx.
+		// Falls back to the procedural arcs when the file is absent.
+		bool  authoredHighMantle{ true };
 		float camCollisionSkin{ 12.0f };    // keep the view this far off surfaces
 		bool  requireForward{ true };       // contextual rule: forward input
 		float lookConeDeg{ 35.0f };         // must be looking at the ledge

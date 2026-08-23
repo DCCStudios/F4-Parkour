@@ -2,6 +2,7 @@
 
 #include "ParkourTypes.h"
 #include "Curves.h"
+#include "AuthoredCurve.h"
 
 namespace F4Parkour
 {
@@ -100,6 +101,14 @@ namespace F4Parkour
 		bool         hasLastPos{ false };
 		bool         earlySneakSent{ false };
 		bool         startedInAir{ false };  // real jump anim is playing
+		// Authored-curve mode: a high mantle rides the animation's own
+		// exported root trajectory in lockstep (duration = clip length,
+		// no easing, no align glide — the measured-vs-nominal scaling
+		// absorbs start-distance and height variance). Pointer targets
+		// AuthoredCurves' static storage, which can only reload from
+		// Start, and Start never runs while a move is active.
+		bool                authoredMode{ false };
+		const AuthoredCurve* authored{ nullptr };
 		bool         correctionMode{ false };  // guard glide, not a real move
 		bool         aligning{ false };        // pre-move walk-back glide
 		float        alignT{ 0.0f };
