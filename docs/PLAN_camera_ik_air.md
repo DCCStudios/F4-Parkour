@@ -12,6 +12,73 @@ piece fails.
 
 ---
 
+## Reference method: STALKER "Ledge Grabbing" (demonized) — read this first
+
+A shipped first-person climbing mod for STALKER Anomaly
+(`PluginTemplate/Ledge Grabbing/gamedata/scripts/`) solves all three of
+our goals with ONE mechanism, and it changes the IK recommendation below.
+Its method, distilled from the source:
+
+- **Detection**: an array of forward rays from max→min climb height finds
+  the ledge; a player-width side check and a stand-height check validate it
+  (`demonized_ledge_grabbing.script` ~L506-580). This is what we already do.
+- **Motion = procedural path blended with an authored camera curve.** Each
+  frame it computes TWO camera transforms and blends them:
+  1. a **procedural cubic Bezier** from the start camera position to the
+     measured climb point — this is what adapts to ANY height/position;
+  2. a **prebaked camera curve** (location XYZ + rotation euler XYZ, baked
+     from a Blender animation as Bezier segments — see
+     `demonized_ledge_grabbing_animation_data.script` and the exporter
+     `..._blender_script.py`), rotated to the player's facing and added as
+     an offset.
+  It eases the prebaked curve IN over `animInFrame`, holds it through the
+  "signature" middle, then eases back OUT to the pure procedural path after
+  `animOutFrame` (L1295-1322). Procedural start → authored signature →
+  procedural settle. **This is phase segmentation via a blend weight, and
+  it is where variable height is absorbed — by the procedural half, not by
+  scaling the animation.**
+- **The body follows the camera**: `set_actor_position(cameraPos.y - camY)`
+  each frame, where `camY` is the fixed camera-height-over-feet offset
+  (L1304-1313). Feet track the view.
+- **Camera looks at the geometry**: it lerps the view toward the grab point
+  (`animInK`), then toward the climb point (`animRotationK`), plus the
+  authored rotation curve as an additive flavor, easing back to neutral on
+  exit (L1327-1381). This IS the "cutscene" framing and it keeps the view
+  aimed at what you are climbing.
+- **Hands are a VIEWMODEL animation, NOT world-space IK.**
+  `play_hud_motion(2, "item_anm_ledge_grabbing", "anm_climb", ...)`
+  (L1398). The hands read as grabbing the ledge purely because the CAMERA
+  is positioned relative to the ledge so the first-person hands line up.
+  There is no per-frame hand IK to world geometry anywhere in the mod.
+
+### What this changes for us
+1. **First person needs NO world-space hand IK.** We already play a
+   first-person hand animation on weapon-away moves (the `Vault.hkx` /
+   `Mantle.hkx` auto-idles just added) — that is the exact analogue of
+   `anm_climb`. The "attached" feel comes from **camera-to-geometry
+   alignment + a canned FP hand animation**, which sidesteps the entire
+   FP-arms-projection problem (§3). This is dramatically simpler and is a
+   proven shipping approach.
+2. **Camera collision + cutscene framing + the mantle "feel" are one
+   feature**: a camera director that drives the FP camera along a
+   procedural path to the climb point, looks at the grab/climb point, and
+   optionally blends an authored curve for signature. Our `CameraPivot`
+   node is the FO4 seam for it.
+3. **World-space hand IK becomes a THIRD-PERSON-only concern** — the view
+   where you actually see the body and a viewmodel trick cannot help.
+4. We can **reuse their Blender camera-curve export concept** to author a
+   signature FP climb curve and bake it to data we ship (same idea as our
+   existing Catmull-Rom curve JSON), then blend it with the procedural path.
+
+FO4 caveat: STALKER's `set_cam_custom_position_direction` and
+`play_hud_motion` are X-Ray engine calls with no direct FO4 equivalent.
+The FO4 mapping is: drive the FP camera via the `CameraPivot` inserted
+node (position + rotation) instead of `set_cam_custom_position_direction`,
+and the FP hand animation via our existing `SetupSpecialIdle` auto-idle
+instead of `play_hud_motion`. The *method* ports; the API calls do not.
+
+---
+
 ## 1. Air vault / mantle (extend the partial support that already exists)
 
 ### What already works
@@ -153,9 +220,18 @@ into a corner mid-move and confirm it eases out, not pops.
 
 ## 3. Hand IK to the climbed surface
 
-This is the highest-reward and highest-effort feature, and it is what
-makes a mantle read as "attached" at any height from one animation (the
-Far Cry / Dying Light technique: warped body + IK-pinned contacts).
+**Scope narrowed by the STALKER reference (above): world-space hand IK is
+now a THIRD-PERSON-ONLY feature.** In first person, do NOT IK the hands —
+use the STALKER approach (camera driven to the geometry + the existing
+`Vault.hkx`/`Mantle.hkx` viewmodel hand animation), which avoids the
+FP-arms-projection problem entirely and is a proven shipping method. Build
+the camera director (§2, extended toward the STALKER path) first; it
+delivers the FP "attached" feel with zero IK.
+
+The rest of this section is the THIRD-PERSON solver — where you see the
+actual body and no viewmodel trick applies. It is the highest-effort piece
+and is optional / last (the Far Cry / Dying Light technique: body motion +
+IK-pinned contacts).
 
 ### Step 0 — skeleton probe (prerequisite; do this first, in-game)
 Add a debug-gated dump (behind `debugEnabled`) that, on a mantle, walks
@@ -242,15 +318,21 @@ first person with FOV-match: confirm the hands still line up on screen.
 
 ---
 
-## Suggested sequencing
+## Suggested sequencing (revised after the STALKER reference)
 
 1. **Air parkour** — low risk, mostly enabling/hardening existing code;
    immediate gameplay payoff.
-2. **Camera collision (FP)** — medium; reuses the CameraPivot node, self-
-   contained, improves every move.
-3. **Hand IK** — gated on the Step-0 skeleton probe. Build TP world-space
-   solver → add FP with FOV-match. This is the "attached" feel and pairs
-   with the larger root-motion/phase-segmentation direction when that lands.
+2. **Camera director (FP), STALKER-style** — the big one, and it now
+   covers THREE things at once: camera collision (the path ends at a valid
+   climb point and rides toward it), the "cutscene"/attached feel (view
+   looks at the grab/climb point), and — combined with the existing FP hand
+   auto-idles — the first-person "grabbing" illusion **with no hand IK**.
+   Reuses the `CameraPivot` node. Optionally add a Blender-baked signature
+   curve later, blended with the procedural path.
+3. **Third-person hand IK** — optional, last, gated on the Step-0 skeleton
+   probe. Only needed for the TP view; FP is already handled by step 2.
 
-All three keep the movement authoritative and degrade cleanly, so they can
-ship incrementally without destabilizing the shipping mantle/vault.
+The STALKER reference collapses what looked like three features into
+"harden air" + "one camera director" (+ optional TP IK). All keep movement
+authoritative and degrade cleanly, so they ship incrementally without
+destabilizing the current mantle/vault.
