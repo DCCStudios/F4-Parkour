@@ -161,11 +161,22 @@ namespace F4Parkour::CameraPivot
 		if (!inserted || !inserted->parent) return;
 
 		// The view point is the FP "Camera" bone (now a child of the
-		// inserted node). Read its world position.
+		// inserted node). Its world position INCLUDES whatever offset we
+		// applied last frame — solving against that feeds our own output
+		// back into the ray and compounds every frame the ray still hits
+		// (the runaway that dragged the view under the world). Subtract
+		// the applied offset's world contribution so the solve always runs
+		// against the pristine, animation-driven camera position.
 		const RE::BSFixedString pivotName{ kPivotBoneName };
 		auto* camObj = inserted->GetObjectByName(pivotName);
 		if (!camObj) return;
-		const RE::NiPoint3 camWorld = camObj->world.translate;
+		const RE::NiPoint3 applied = inserted->local.translate;  // parent frame
+		const RE::NiPoint3 appliedWorld = MatMulPoint(Transpose(inserted->parent->world.rotate), applied);
+		const RE::NiPoint3 camWorld{
+			camObj->world.translate.x - appliedWorld.x,
+			camObj->world.translate.y - appliedWorld.y,
+			camObj->world.translate.z - appliedWorld.z
+		};
 
 		// Anchor: chest height above the feet — provably inside the capsule
 		// and therefore clear of the geometry we are climbing.
@@ -187,7 +198,9 @@ namespace F4Parkour::CameraPivot
 				// width off the surface. World offset, then expressed in the
 				// inserted node's PARENT frame (this codebase's NiMatrix3
 				// convention: world->parentFrame = M * v, see header).
-				const float pull = (len - hit.distance) + a_skin;
+				// Hard bound: never pull the view past the chest anchor,
+				// whatever the ray reports.
+				const float pull = std::min((len - hit.distance) + a_skin, len - 1.0f);
 				const RE::NiPoint3 worldOffset{ -dir.x * pull, -dir.y * pull, -dir.z * pull };
 				targetLocal = MatMulPoint(inserted->parent->world.rotate, worldOffset);
 			}
