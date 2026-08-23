@@ -32,7 +32,10 @@ namespace F4Parkour
 		// High-mantle camera director (first person): keeps the view level
 		// and pulls it out of geometry so the rising eye never clips the
 		// ledge. Scoped to tier-2 mantles only.
-		bool  highMantleCameraDirector{ true };
+		// Procedural camera collision retired (fought the FP animation;
+		// superseded by the authored-curve mantle rework). Off by default,
+		// toggle kept for A/B only.
+		bool  highMantleCameraDirector{ false };
 		float camCollisionSkin{ 12.0f };    // keep the view this far off surfaces
 		bool  requireForward{ true };       // contextual rule: forward input
 		float lookConeDeg{ 35.0f };         // must be looking at the ledge
