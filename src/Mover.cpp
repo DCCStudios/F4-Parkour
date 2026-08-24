@@ -106,6 +106,14 @@ namespace
 			cc->fallStartHeight = a_player->data.location.z;
 			cc->inAirPreMove = false;
 		}
+		// The havok controller is only the physics half. The player's
+		// BEHAVIOR GRAPH tracks airborne separately via the "bInAir" graph
+		// variable — if it stays true, the graph blends idle -> fall -> land
+		// after the move regardless of the grounded controller (the "stuck
+		// falling after a high mantle" report; the log proved the controller
+		// resolved grounded yet the graph still fell). Clear it too.
+		static const RE::BSFixedString kInAir{ "bInAir" };
+		a_player->SetGraphVariableBool(kInAir, false);
 		PinControllerPitch(a_player);
 	}
 
@@ -1170,6 +1178,22 @@ namespace F4Parkour
 
 		AnimHijack::GetSingleton()->OnMoveEnd(a_player, kind);
 		DebugDraw::GetSingleton()->ClearPath();
+
+		// One-shot diagnostic: which airborne graph variable actually exists
+		// on the player behavior? SetGraphVariableBool returns true only when
+		// the named variable is present. Logs once so we can confirm the name
+		// driving the post-mantle fall without spamming.
+		{
+			static bool s_probed = false;
+			if (!s_probed) {
+				s_probed = true;
+				const bool inAir = a_player->SetGraphVariableBool(RE::BSFixedString{ "bInAir" }, false);
+				const bool jumping = a_player->SetGraphVariableBool(RE::BSFixedString{ "bIsJumping" }, false);
+				const bool falling = a_player->SetGraphVariableBool(RE::BSFixedString{ "bIsFalling" }, false);
+				logger::info("[Mover] Air graph-var probe: bInAir={} bIsJumping={} bIsFalling={}",
+					inAir, jumping, falling);
+			}
+		}
 
 		logger::info("[Mover] {} finished", kind == MoveKind::Vault ? "vault" : "mantle");
 
