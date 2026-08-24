@@ -456,31 +456,53 @@ namespace F4Parkour
 		if (authoredMode) {
 			duration = authored->duration;
 
-			// Curve-space ANCHOR: scale the clip's forward run by the SAME
-			// factor as its rise (uniform scale) and place the origin so the
-			// climb ends at the measured landing. This preserves the
-			// authored distance-to-wall 1:1 — the hands meet the ledge where
-			// the animator put them. The player's real start offset from
-			// this anchor decays over the clip's early crouch/grab window
-			// (approach blend, STALKER's animIn), BEFORE the big rise, so
-			// triggering from far away walks you to the wall first instead
-			// of stretching the whole climb horizontally ("arms grabbing
-			// air" screenshots).
+			// Spatial contract (author-stated): the clip STARTS pressed
+			// against the wall — the grab lines up with the LIP — and its
+			// LAST frame stands on top, nominalFwd past the edge. So the
+			// curve-space ANCHOR goes AT the lip, and the end goes the
+			// authored run past it (forward scaled by the SAME factor as
+			// the rise, uniform scale), instead of wherever detection's
+			// stand point happened to land. The player's real start offset
+			// from the anchor decays over the clip's early crouch/grab
+			// window (approach blend, STALKER's animIn), BEFORE the big
+			// rise — triggering from far away walks you to the wall first.
+			const RE::NiPoint3& lip = cand.mantleLedge;
 			const float riseScale = std::max(0.0f, endPos.z - startPos.z) / authored->nominalUp;
 			const float authoredRun = authored->nominalFwd * riseScale;
-			authoredAnchor = {
-				endPos.x - dir.x * authoredRun,
-				endPos.y - dir.y * authoredRun,
-				startPos.z
-			};
+
+			// The authored end may overshoot detection's verified stand
+			// point; accept it only over real ground near the top surface.
+			// Thin tops keep the verified stand point — the grab still
+			// aligns at the lip, only the top-out compresses.
+			bool authoredEndUsed = false;
+			{
+				RE::NiPoint3 propEnd{
+					lip.x + dir.x * authoredRun,
+					lip.y + dir.y * authoredRun,
+					endPos.z
+				};
+				RE::NiPoint3 gStart = propEnd;
+				gStart.z += 40.0f;
+				Raycast::RayHit g{};
+				if (Raycast::CastDir(gStart, { 0.0f, 0.0f, -1.0f }, 80.0f, g) && g.hit) {
+					propEnd.z = gStart.z - g.distance;
+					if (std::fabs(propEnd.z - endPos.z) < 25.0f) {
+						endPos = propEnd;
+						authoredEndUsed = true;
+					}
+				}
+			}
+
+			authoredAnchor = { lip.x, lip.y, startPos.z };
 			const float adx = authoredAnchor.x - startPos.x;
 			const float ady = authoredAnchor.y - startPos.y;
 			const float approachDist = std::sqrt(adx * adx + ady * ady);
 			authoredApproachT = std::clamp(approachDist / 300.0f, 0.12f, 0.45f * duration);
 			if (!a_dryRun) {
 				logger::info(
-					"[Mover] Authored anchor: run={:.1f}u approach={:.1f}u over {:.2f}s (riseScale={:.2f})",
-					authoredRun, approachDist, authoredApproachT, riseScale);
+					"[Mover] Authored anchor at lip: run={:.1f}u ({}) approach={:.1f}u over {:.2f}s (riseScale={:.2f})",
+					authoredRun, authoredEndUsed ? "authored end" : "stand-point fallback",
+					approachDist, authoredApproachT, riseScale);
 			}
 		}
 
