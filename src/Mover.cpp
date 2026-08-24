@@ -928,7 +928,21 @@ namespace F4Parkour
 		}
 
 		AssignPoint3A(a_player->data.location, pos);
-		if (!startedInAir) {
+		// Grounded pin: a normal grounded move always; an AIR-START MANTLE
+		// once PAST THE APEX (committed) — by then the real jump is over,
+		// we are climbing onto the surface, and the overriding idle
+		// (Ledge.hkx / Vault.hkx via SetupSpecialIdle) drives the pose, so
+		// telling the graph it is grounded cannot freeze a jump it is no
+		// longer showing. This settles the graph grounded BEFORE the idle
+		// ends, so no air->ground land animation fires at move end ("land
+		// in the air after mantles") and the weapon-inspect idle resolves
+		// into its normal equip instead of a land. The rising leg of an
+		// air start still keeps its honest air state (a genuine jump is
+		// still in the air there); vaults are unchanged (they exit airborne
+		// with momentum by design).
+		const bool groundAsIdle =
+			startedInAir && kind == MoveKind::Mantle && phase == MovePhase::Committed;
+		if (!startedInAir || groundAsIdle) {
 			PinGroundedState(a_player);
 		} else {
 			// Air starts keep their honest air state, but the capsule
