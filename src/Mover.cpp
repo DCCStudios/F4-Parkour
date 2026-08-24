@@ -1045,6 +1045,7 @@ namespace F4Parkour
 		// penetration (solver can fail downward = through the map); no
 		// ground at all means something went badly wrong — in that case
 		// the start position is the only known-good spot.
+		bool landGrounded = false;
 		{
 			RE::NiPoint3 gStart = endPos;
 			gStart.z += 30.0f;
@@ -1057,6 +1058,7 @@ namespace F4Parkour
 				if (endPos.z < groundZ + 0.5f || endPos.z > groundZ + 4.0f) {
 					endPos.z = groundZ + 0.5f;
 				}
+				landGrounded = true;
 			} else {
 				logger::warn("[Mover] No ground under the landing - reverting to start position");
 				endPos = startPos;
@@ -1065,7 +1067,13 @@ namespace F4Parkour
 
 		AssignPoint3A(a_player->data.location, endPos);
 		WarpController(a_player, endPos);
-		if (!startedInAir) {
+		// Air starts that END on verified ground resolve GROUNDED too: the
+		// old always-airborne hand-off (-60 micro-fall) made the engine
+		// play a landing animation while already standing on the surface —
+		// "landing in mid-air" on every high mantle. Land on the ground
+		// whenever possible; the airborne resolution stays only for the
+		// reverted/no-ground case.
+		if (!startedInAir || landGrounded) {
 			PinGroundedState(a_player);
 		}
 		CameraPivot::Clear(a_player);
@@ -1074,15 +1082,22 @@ namespace F4Parkour
 		SetNoSim(a_player, false);
 		RestoreControllerPitch(a_player);
 
-		// Air-start moves: the controller resumes IN AIR a hair above the
-		// verified landing with a small downward push, so the engine
-		// performs a natural micro-landing - the jump graph receives its
-		// real landing and the jump pose (and its camera pitch) resolves
-		// instead of sticking.
+		// Air-start moves: fall bookkeeping is authored-motion garbage
+		// either way — clear it so nothing processes the climb as a fall.
+		// On verified ground the state was pinned grounded above (the
+		// controller reports kOnGround, so the graph leaves its fall state
+		// by the normal grounded query, not via a synthetic drop). Only
+		// the no-ground/reverted case still hands off airborne with the
+		// -60 micro-fall so the jump graph gets a real landing.
 		if (startedInAir) {
 			ClearFallState(a_player);
-			SetVelocity(a_player, { 0.0f, 0.0f, -60.0f });
-			logger::info("[Mover] Air-start move - resolving with natural landing");
+			if (landGrounded) {
+				SetVelocity(a_player, { 0.0f, 0.0f, 0.0f });
+				logger::info("[Mover] Air-start move - resolved grounded on the verified landing");
+			} else {
+				SetVelocity(a_player, { 0.0f, 0.0f, -60.0f });
+				logger::info("[Mover] Air-start move - resolving with natural landing");
+			}
 		}
 
 		if (kind == MoveKind::Vault) {

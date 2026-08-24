@@ -44,8 +44,10 @@ namespace F4Parkour
 		// grab offset shifts the anchor BACK from the lip (+ = away from
 		// the wall, - = into it); land offset adds to the authored top-out
 		// distance past the edge (+ = deeper onto the top, - = closer).
-		float authoredGrabOffset{ 0.0f };
-		float authoredGrabZOffset{ 0.0f };  // raises (+) / lowers (-) the grab height
+		// Defaults are the user-honed values for the shipped Ledge.hkx clip
+		// (2026-08-24 playtest: 25/25 "seems to do it").
+		float authoredGrabOffset{ 25.0f };
+		float authoredGrabZOffset{ 25.0f };  // raises (+) / lowers (-) the grab height
 		float authoredLandOffset{ 0.0f };
 		float camCollisionSkin{ 12.0f };    // keep the view this far off surfaces
 		bool  requireForward{ true };       // contextual rule: forward input
