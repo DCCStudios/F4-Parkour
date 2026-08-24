@@ -940,8 +940,21 @@ namespace F4Parkour
 		// air start still keeps its honest air state (a genuine jump is
 		// still in the air there); vaults are unchanged (they exit airborne
 		// with momentum by design).
+		// AUTHORED high mantle: the Ledge.hkx idle drives the visible pose
+		// for the WHOLE climb, so the underlying locomotion graph never
+		// needs to show the launching jump. Pin grounded from frame ZERO
+		// (not just at commit) so the engine's real jump->fall state
+		// machine is held grounded throughout and has NOTHING to resolve
+		// when the idle ends — otherwise the graph blends idle -> multi-
+		// second fall -> land (the "falls for a few seconds after a high
+		// mantle" report). Safe because the idle is the pose authority:
+		// the round-9 "frozen jump pose" only happened when the bare jump
+		// animation was still what the player saw. Non-authored air-start
+		// mantles still keep their honest air state until the apex (commit)
+		// so a genuinely-shown jump can resolve; vaults are unchanged.
 		const bool groundAsIdle =
-			startedInAir && kind == MoveKind::Mantle && phase == MovePhase::Committed;
+			authoredMode ||
+			(startedInAir && kind == MoveKind::Mantle && phase == MovePhase::Committed);
 		if (!startedInAir || groundAsIdle) {
 			PinGroundedState(a_player);
 		} else {
