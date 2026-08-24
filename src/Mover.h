@@ -109,6 +109,12 @@ namespace F4Parkour
 		// Start, and Start never runs while a move is active.
 		bool                authoredMode{ false };
 		const AuthoredCurve* authored{ nullptr };
+		// Curve-space origin: placed so the clip's authored wall distance
+		// is preserved 1:1 (forward scaled by the SAME factor as the
+		// rise). The player's real start offset decays toward it over the
+		// clip's early crouch/grab window (approach blend).
+		RE::NiPoint3        authoredAnchor{};
+		float               authoredApproachT{ 0.0f };
 		bool         correctionMode{ false };  // guard glide, not a real move
 		bool         aligning{ false };        // pre-move walk-back glide
 		float        alignT{ 0.0f };

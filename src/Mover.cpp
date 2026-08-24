@@ -406,7 +406,10 @@ namespace F4Parkour
 
 		// Belt-and-braces apex headroom probe: if something hangs over
 		// the arc's peak, flatten the arc under it rather than colliding.
-		{
+		// Skipped in authored mode: apexZ does not shape the authored path
+		// (the clip's own rise does), and the anchor this SamplePath call
+		// depends on is not computed yet at this point in Start.
+		if (!authoredMode) {
 			RE::NiPoint3 apexProbe = SamplePath(apexS);
 			apexProbe.z = apexZ + 2.0f;
 			Raycast::RayHit overhead{};
@@ -452,6 +455,33 @@ namespace F4Parkour
 		// sliders and speed matching do not apply.
 		if (authoredMode) {
 			duration = authored->duration;
+
+			// Curve-space ANCHOR: scale the clip's forward run by the SAME
+			// factor as its rise (uniform scale) and place the origin so the
+			// climb ends at the measured landing. This preserves the
+			// authored distance-to-wall 1:1 — the hands meet the ledge where
+			// the animator put them. The player's real start offset from
+			// this anchor decays over the clip's early crouch/grab window
+			// (approach blend, STALKER's animIn), BEFORE the big rise, so
+			// triggering from far away walks you to the wall first instead
+			// of stretching the whole climb horizontally ("arms grabbing
+			// air" screenshots).
+			const float riseScale = std::max(0.0f, endPos.z - startPos.z) / authored->nominalUp;
+			const float authoredRun = authored->nominalFwd * riseScale;
+			authoredAnchor = {
+				endPos.x - dir.x * authoredRun,
+				endPos.y - dir.y * authoredRun,
+				startPos.z
+			};
+			const float adx = authoredAnchor.x - startPos.x;
+			const float ady = authoredAnchor.y - startPos.y;
+			const float approachDist = std::sqrt(adx * adx + ady * ady);
+			authoredApproachT = std::clamp(approachDist / 300.0f, 0.12f, 0.45f * duration);
+			if (!a_dryRun) {
+				logger::info(
+					"[Mover] Authored anchor: run={:.1f}u approach={:.1f}u over {:.2f}s (riseScale={:.2f})",
+					authoredRun, approachDist, authoredApproachT, riseScale);
+			}
 		}
 
 		if (!ValidatePath(ledge)) {
@@ -529,19 +559,28 @@ namespace F4Parkour
 			end.z = preConvertEnd.z + (endPos.z - preConvertEnd.z) * endBlend;
 		}
 
-		// Authored mode: a_s is the RAW time fraction (no easing), and the
-		// sample decomposition maps straight onto measured geometry —
-		// horizontal progress follows the clip's forward fraction toward
-		// the (blended) end, vertical follows its rise fraction. The final
-		// sample is (fwd=1, up=1) by construction, so the move ends exactly
-		// at the landing with nothing left for Finish to snap.
+		// Authored mode: a_s is the RAW time fraction (no easing). The
+		// curve maps from the ANCHOR (placed at Start so the clip's
+		// forward run is uniformly scaled with its rise — authored wall
+		// distance preserved 1:1) to the (blended) end; the final sample
+		// is (fwd=1, up=1) by construction, so the move ends exactly at
+		// the landing with nothing left for Finish to snap. The player's
+		// real start offset from the anchor decays over the approach
+		// window (the clip's early crouch/grab, before the big rise).
 		if (authoredMode && authored) {
-			const auto smp = authored->At(a_s * duration);
-			const float latScale = std::max(0.0f, end.z - startPos.z) / authored->nominalUp;
+			const float tSec = a_s * duration;
+			const auto smp = authored->At(tSec);
+			const float latScale = std::max(0.0f, end.z - authoredAnchor.z) / authored->nominalUp;
 			RE::NiPoint3 p;
-			p.x = startPos.x + (end.x - startPos.x) * smp.fwd + dir.y * smp.lat * latScale;
-			p.y = startPos.y + (end.y - startPos.y) * smp.fwd - dir.x * smp.lat * latScale;
-			p.z = startPos.z + (end.z - startPos.z) * smp.up;
+			p.x = authoredAnchor.x + (end.x - authoredAnchor.x) * smp.fwd + dir.y * smp.lat * latScale;
+			p.y = authoredAnchor.y + (end.y - authoredAnchor.y) * smp.fwd - dir.x * smp.lat * latScale;
+			p.z = authoredAnchor.z + (end.z - authoredAnchor.z) * smp.up;
+
+			const float tw = authoredApproachT > 1.0e-4f ? std::min(1.0f, tSec / authoredApproachT) : 1.0f;
+			const float w = tw * tw * (3.0f - 2.0f * tw);
+			p.x += (startPos.x - authoredAnchor.x) * (1.0f - w);
+			p.y += (startPos.y - authoredAnchor.y) * (1.0f - w);
+
 			// The authored crouch dip scales with the measured rise; cap it
 			// so the capsule never sinks meaningfully into its own ground.
 			p.z = std::max(p.z, startPos.z - 6.0f);
