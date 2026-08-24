@@ -107,13 +107,19 @@ namespace
 			cc->inAirPreMove = false;
 		}
 		// The havok controller is only the physics half. The player's
-		// BEHAVIOR GRAPH tracks airborne separately via the "bInAir" graph
-		// variable — if it stays true, the graph blends idle -> fall -> land
-		// after the move regardless of the grounded controller (the "stuck
-		// falling after a high mantle" report; the log proved the controller
-		// resolved grounded yet the graph still fell). Clear it too.
+		// BEHAVIOR GRAPH tracks airborne separately — the Finish probe
+		// confirmed all three of bInAir / bIsJumping / bIsFalling exist on
+		// the player behavior, and if any stays true the graph blends
+		// idle -> fall -> land after the move regardless of the grounded
+		// controller (the "stuck falling after a high mantle" report; the
+		// log proved the controller resolved grounded yet the graph still
+		// fell). Clear the whole airborne triplet every grounded frame.
 		static const RE::BSFixedString kInAir{ "bInAir" };
+		static const RE::BSFixedString kJumping{ "bIsJumping" };
+		static const RE::BSFixedString kFalling{ "bIsFalling" };
 		a_player->SetGraphVariableBool(kInAir, false);
+		a_player->SetGraphVariableBool(kJumping, false);
+		a_player->SetGraphVariableBool(kFalling, false);
 		PinControllerPitch(a_player);
 	}
 
