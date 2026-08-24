@@ -40,6 +40,13 @@ namespace F4Parkour
 		// (Curves/mantle_high.curve.json) in lockstep with Ledge.hkx.
 		// Falls back to the procedural arcs when the file is absent.
 		bool  authoredHighMantle{ true };
+		// Fine-tune offsets (game units) on the clip's spatial contract:
+		// grab offset shifts the anchor BACK from the lip (+ = away from
+		// the wall, - = into it); land offset adds to the authored top-out
+		// distance past the edge (+ = deeper onto the top, - = closer).
+		float authoredGrabOffset{ 0.0f };
+		float authoredGrabZOffset{ 0.0f };  // raises (+) / lowers (-) the grab height
+		float authoredLandOffset{ 0.0f };
 		float camCollisionSkin{ 12.0f };    // keep the view this far off surfaces
 		bool  requireForward{ true };       // contextual rule: forward input
 		float lookConeDeg{ 35.0f };         // must be looking at the ledge

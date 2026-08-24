@@ -523,6 +523,16 @@ namespace
 			"(Curves/mantle_high.curve.json) in lockstep, scaled to the measured ledge - path "
 			"and animation cannot disagree. Falls back to the procedural arcs when the curve "
 			"file is missing.");
+		SliderTip("Grab distance offset", &s->authoredGrabOffset, -30.0f, 40.0f, "%.0f",
+			"Fine-tune the authored high mantle's grab position relative to the ledge edge. "
+			"Positive backs the body away from the wall, negative pushes it closer/into it. "
+			"0 = the clip's authored station (start pressed against the wall).");
+		SliderTip("Grab height offset", &s->authoredGrabZOffset, -40.0f, 40.0f, "%.0f",
+			"Raise (+) or lower (-) where the grab/hang happens on the wall. The climb still "
+			"ends exactly on top; only the early portion shifts.");
+		SliderTip("Land distance offset", &s->authoredLandOffset, -50.0f, 50.0f, "%.0f",
+			"How far past the edge you end up, relative to the clip's authored top-out. "
+			"Positive lands deeper onto the surface, negative closer to the edge.");
 		CheckboxTip("Show parkour indicator", &s->indicatorEnabled,
 			"Small ring on a ledge you can vault or mantle (SkyParkour-style cue). "
 			"Only shown for ledges above the LOW height - knee-high steps stay quiet.");

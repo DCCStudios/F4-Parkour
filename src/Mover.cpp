@@ -468,7 +468,15 @@ namespace F4Parkour
 			// rise — triggering from far away walks you to the wall first.
 			const RE::NiPoint3& lip = cand.mantleLedge;
 			const float riseScale = std::max(0.0f, endPos.z - startPos.z) / authored->nominalUp;
-			const float authoredRun = authored->nominalFwd * riseScale;
+			// User fine-tune offsets on the contract: grab offset backs the
+			// anchor away from the wall (+) or into it (-); land offset
+			// deepens (+) or shortens (-) the authored top-out, floored so
+			// the landing always stays past the lip.
+			const float grabOffset = Settings::GetSingleton()->authoredGrabOffset;
+			const float grabZOffset = Settings::GetSingleton()->authoredGrabZOffset;
+			const float landOffset = Settings::GetSingleton()->authoredLandOffset;
+			const float authoredRun =
+				std::max(4.0f, authored->nominalFwd * riseScale + landOffset);
 
 			// The authored end may overshoot detection's verified stand
 			// point; accept it only over real ground near the top surface.
@@ -493,7 +501,11 @@ namespace F4Parkour
 				}
 			}
 
-			authoredAnchor = { lip.x, lip.y, startPos.z };
+			authoredAnchor = {
+				lip.x - dir.x * grabOffset,
+				lip.y - dir.y * grabOffset,
+				startPos.z + grabZOffset
+			};
 			const float adx = authoredAnchor.x - startPos.x;
 			const float ady = authoredAnchor.y - startPos.y;
 			const float approachDist = std::sqrt(adx * adx + ady * ady);
@@ -602,6 +614,9 @@ namespace F4Parkour
 			const float w = tw * tw * (3.0f - 2.0f * tw);
 			p.x += (startPos.x - authoredAnchor.x) * (1.0f - w);
 			p.y += (startPos.y - authoredAnchor.y) * (1.0f - w);
+			// The grab Z offset raises/lowers the anchor, so decay the
+			// vertical start offset too or t=0 would pop by that amount.
+			p.z += (startPos.z - authoredAnchor.z) * (1.0f - w);
 
 			// The authored crouch dip scales with the measured rise; cap it
 			// so the capsule never sinks meaningfully into its own ground.
