@@ -105,6 +105,20 @@ namespace
 			cc->fallTime = 0.0f;
 			cc->fallStartHeight = a_player->data.location.z;
 			cc->inAirPreMove = false;
+			// The FLAGS word is part of the grounded contract too — the
+			// engine's own IsOnGround test is `(flags & kSupport) || state
+			// == kOnGround` (ActorVelocityFramework reads it exactly so),
+			// and kJumping persists from the launching jump on air starts:
+			// with it set, the engine's jump bookkeeping holds the graph's
+			// iSyncJumpState airborne no matter what state/events we write
+			// (log: "iSyncJumpState was still 2" after two jumpLand fires).
+			// AVF's per-frame mask sets support + manifold and clears
+			// kJumping while it drives motion; mirror that here.
+			constexpr auto kSupportBits =
+				static_cast<std::uint32_t>(RE::CHARACTER_FLAGS::kSupport) |
+				static_cast<std::uint32_t>(RE::CHARACTER_FLAGS::kHasPotentialSupportManifold);
+			constexpr auto kJumpingBit = static_cast<std::uint32_t>(RE::CHARACTER_FLAGS::kJumping);
+			cc->flags = (cc->flags | kSupportBits) & ~kJumpingBit;
 		}
 		// The havok controller is only the physics half. The player's
 		// BEHAVIOR GRAPH tracks airborne separately — the Finish probe
@@ -816,7 +830,37 @@ namespace F4Parkour
 
 	void Mover::Update(RE::PlayerCharacter* a_player, float a_dt)
 	{
-		if (!active) return;
+		if (!active) {
+			// Post-move jumpLand retry: the mid-move/Finish fires happen
+			// under kNoSim with the special idle occupying the graph, and
+			// the log showed the graph refusing them (iSyncJumpState stayed
+			// 2). AVF's fire WORKS because it happens on a live-simulation
+			// frame with the idle over — reproduce that: for a short window
+			// after an air-start mantle, nudge the graph at 10Hz until its
+			// jump state clears.
+			if (jumpLandRetryT > 0.0f && a_player) {
+				jumpLandRetryT -= a_dt;
+				jumpLandRetryTick -= a_dt;
+				if (jumpLandRetryTick <= 0.0f) {
+					jumpLandRetryTick = 0.1f;
+					std::int32_t js = 0;
+					static const RE::BSFixedString kSyncJump{ "iSyncJumpState" };
+					a_player->GetGraphVariableImplInt(kSyncJump, js);
+					if (js <= 0) {
+						logger::info("[Mover] post-move: graph landed (iSyncJumpState=0)");
+						jumpLandRetryT = 0.0f;
+					} else {
+						static const RE::BSFixedString kJumpLand{ "jumpLand" };
+						a_player->NotifyAnimationGraphImpl(kJumpLand);
+						if (jumpLandRetryT <= 0.0f) {
+							logger::warn(
+								"[Mover] post-move jumpLand retries exhausted (iSyncJumpState still {})", js);
+						}
+					}
+				}
+			}
+			return;
+		}
 
 		auto* settings = Settings::GetSingleton();
 		a_dt *= settings->moverTimeScale;
@@ -1165,6 +1209,10 @@ namespace F4Parkour
 					static const RE::BSFixedString kJumpLand{ "jumpLand" };
 					a_player->NotifyAnimationGraphImpl(kJumpLand);
 					logger::info("[Mover] jumpLand fired at Finish (iSyncJumpState was still {})", jumpState);
+					// Keep nudging for a short window AFTER the move — the
+					// live-sim, idle-over frames where AVF's fire works.
+					jumpLandRetryT = 1.5f;
+					jumpLandRetryTick = 0.1f;
 				}
 				logger::info("[Mover] Air-start move - resolved grounded on the verified landing");
 			} else {
