@@ -389,6 +389,29 @@ namespace
 			return;
 		}
 
+		// FOOTPRINT: the thin rays above accepted this landing, but the
+		// capsule is 16u wide — on jagged rock the point can thread a gap
+		// while the capsule overlaps a bulge ("end the vault clipped into
+		// the rock"). Step the landing forward until the full footprint
+		// fits; if it never does, this is not a landing.
+		{
+			int fpTries = 0;
+			while (!Detection::FootprintClear(landing) && ++fpTries <= 3) {
+				landing.x += a_dir.x * 10.0f;
+				landing.y += a_dir.y * 10.0f;
+				RE::NiPoint3 lStart = landing;
+				lStart.z = ledgePoint.z - 2.0f;
+				Raycast::RayHit lHit{};
+				if (Raycast::CastDir(lStart, down, settings->maxVaultDrop + 20.0f, lHit) && lHit.hit) {
+					landing.z = lStart.z - lHit.distance;
+				}
+			}
+			if (fpTries > 3) {
+				DbgReject("vault", "landing footprint blocked (rock bulge)");
+				return;
+			}
+		}
+
 		// Back clearance: room for the capsule past the far edge, checked
 		// at crouch height above the landing.
 		{
@@ -687,7 +710,8 @@ namespace
 							Raycast::CastDir(clrStart, a_dir, settings->minBackClearance, clr);
 							if (fenceDrop >= 25.0f && fenceDrop <= settings->maxVaultDrop &&
 								landRise <= 80.0f && !lHead.hit && !clr.hit &&
-								!BelowWater(a_player, landing)) {
+								!BelowWater(a_player, landing) &&
+								Detection::FootprintClear(landing)) {
 								a_out.vaultEligible = true;
 								a_out.vaultLedge = ledgePoint;
 								a_out.vaultHeight = relHeight;
@@ -754,6 +778,14 @@ namespace
 				continue;
 			}
 
+			// FOOTPRINT at the stand point — same rock-bulge rule as vault
+			// landings: the thin rays accepted the spot, but the 16u capsule
+			// must fit without overlapping a face that rises inside it.
+			if (!Detection::FootprintClear(target)) {
+				DbgReject("mantle", "stand footprint blocked at step {} - trying further", i);
+				continue;
+			}
+
 			// Every check passed: this lip is the mantle.
 			a_out.mantleEligible = true;
 			a_out.mantleLedge = ledgePoint;
@@ -776,6 +808,25 @@ namespace
 
 namespace F4Parkour::Detection
 {
+	bool FootprintClear(const RE::NiPoint3& a_center)
+	{
+		constexpr float kRingR = kCapsuleRadius - 3.0f;
+		for (int i = 0; i < 6; ++i) {
+			const float ang = static_cast<float>(i) * 1.0471976f;  // 60 deg
+			const RE::NiPoint3 start{
+				a_center.x + std::cos(ang) * kRingR,
+				a_center.y + std::sin(ang) * kRingR,
+				a_center.z + 45.0f
+			};
+			Raycast::RayHit hit{};
+			Raycast::CastDir(start, { 0.0f, 0.0f, -1.0f }, 80.0f, hit);
+			if (hit.hit && (start.z - hit.distance) > a_center.z + 16.0f) {
+				return false;  // bulge/wall inside the capsule footprint
+			}
+		}
+		return true;
+	}
+
 	static RE::bhkCharacterController* CharCtrl(RE::PlayerCharacter* a_player)
 	{
 		if (a_player && a_player->currentProcess && a_player->currentProcess->middleHigh) {

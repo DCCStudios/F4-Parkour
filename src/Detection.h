@@ -32,6 +32,16 @@ namespace F4Parkour
 		RE::NiPoint3 DirFlat(RE::PlayerCharacter* a_player);
 		float HorizontalSpeed(RE::PlayerCharacter* a_player);
 
+		// True when the 16u-wide capsule can actually STAND at a_center
+		// without overlapping geometry: a ring of down-rays across the
+		// capsule footprint, cast from free space ABOVE (never probe
+		// outward from the center — rays from inside convex shapes lie).
+		// Only a RISE inside the ring fails (a rock bulge / wall face the
+		// thin center ray threaded past — the "end the move clipped into
+		// the rock" report); holes and drops stay tolerated so scan
+		// permissiveness is unchanged.
+		bool FootprintClear(const RE::NiPoint3& a_center);
+
 		// One full detection pass. a_fromAir relaxes the grounded checks
 		// and extends the mantle reach by Settings::airGrabExtraReach.
 		// Fills the DebugDraw working frame as it goes (rays + markers +

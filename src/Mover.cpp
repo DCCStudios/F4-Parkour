@@ -833,6 +833,32 @@ namespace F4Parkour
 			}
 		}
 
+		// FOOTPRINT bulge fix at the refined landing: detection validated a
+		// point, but rock faces can rise inside the 16u capsule around it
+		// ("end the move clipped into the rock"). Nudge forward to the
+		// first spot the full capsule fits — the glide absorbs the shift.
+		// No clear spot within reach keeps the snapped point (status quo).
+		if (!Detection::FootprintClear(adjusted)) {
+			bool found = false;
+			for (int n = 1; n <= 3 && !found; ++n) {
+				RE::NiPoint3 shifted = adjusted;
+				shifted.x += dir.x * 8.0f * static_cast<float>(n);
+				shifted.y += dir.y * 8.0f * static_cast<float>(n);
+				RE::NiPoint3 gs = shifted;
+				gs.z += 30.0f;
+				Raycast::RayHit g2{};
+				if (Raycast::CastDir(gs, { 0.0f, 0.0f, -1.0f }, 60.0f, g2) && g2.hit) {
+					shifted.z = (gs.z - g2.distance) + 0.5f;
+					if (Detection::FootprintClear(shifted)) {
+						adjusted = shifted;
+						found = true;
+					}
+				}
+			}
+			logger::info("[Mover] Landing footprint {} (rock bulge at the refined landing)",
+				found ? "nudged clear" : "still overlapped - keeping snapped point");
+		}
+
 		const float dx = adjusted.x - preAdjust.x;
 		const float dy = adjusted.y - preAdjust.y;
 		const float dz = adjusted.z - preAdjust.z;
