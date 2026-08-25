@@ -123,6 +123,12 @@ namespace F4Parkour
 		DebugDraw::GetSingleton()->Tick(a_dt);
 		Input::Update(a_dt);
 
+		// Idle-time mover work (post-move jumpLand retry) — must run when
+		// NO move is active; Mover::Update is gated behind IsActive below.
+		if (!mover->IsActive() && !InMenu()) {
+			mover->PostMoveTick(a_player, a_dt);
+		}
+
 		// Move in progress: only the mover runs (freeze detection).
 		if (mover->IsActive()) {
 			// A request queued during the move (menu test click, or a

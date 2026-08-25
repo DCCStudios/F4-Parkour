@@ -107,18 +107,18 @@ namespace
 			cc->inAirPreMove = false;
 			// The FLAGS word is part of the grounded contract too — the
 			// engine's own IsOnGround test is `(flags & kSupport) || state
-			// == kOnGround` (ActorVelocityFramework reads it exactly so),
-			// and kJumping persists from the launching jump on air starts:
-			// with it set, the engine's jump bookkeeping holds the graph's
-			// iSyncJumpState airborne no matter what state/events we write
-			// (log: "iSyncJumpState was still 2" after two jumpLand fires).
-			// AVF's per-frame mask sets support + manifold and clears
-			// kJumping while it drives motion; mirror that here.
+			// == kOnGround` (ActorVelocityFramework reads it exactly so).
+			// Set the support bits ONLY. Clearing kJumping here was tried
+			// and made things WORSE: it froze the engine's jump progression
+			// so the graph wedged in the jump's RISING state (iSyncJumpState
+			// 1) all move and replayed the whole jump->fall->land cycle
+			// after the mantle. Let the jump progress to its fall state —
+			// that is the state the "jumpLand" event provably lands from
+			// (the AVF recipe), delivered by the post-move retry.
 			constexpr auto kSupportBits =
 				static_cast<std::uint32_t>(RE::CHARACTER_FLAGS::kSupport) |
 				static_cast<std::uint32_t>(RE::CHARACTER_FLAGS::kHasPotentialSupportManifold);
-			constexpr auto kJumpingBit = static_cast<std::uint32_t>(RE::CHARACTER_FLAGS::kJumping);
-			cc->flags = (cc->flags | kSupportBits) & ~kJumpingBit;
+			cc->flags |= kSupportBits;
 		}
 		// The havok controller is only the physics half. The player's
 		// BEHAVIOR GRAPH tracks airborne separately — the Finish probe
@@ -830,37 +830,7 @@ namespace F4Parkour
 
 	void Mover::Update(RE::PlayerCharacter* a_player, float a_dt)
 	{
-		if (!active) {
-			// Post-move jumpLand retry: the mid-move/Finish fires happen
-			// under kNoSim with the special idle occupying the graph, and
-			// the log showed the graph refusing them (iSyncJumpState stayed
-			// 2). AVF's fire WORKS because it happens on a live-simulation
-			// frame with the idle over — reproduce that: for a short window
-			// after an air-start mantle, nudge the graph at 10Hz until its
-			// jump state clears.
-			if (jumpLandRetryT > 0.0f && a_player) {
-				jumpLandRetryT -= a_dt;
-				jumpLandRetryTick -= a_dt;
-				if (jumpLandRetryTick <= 0.0f) {
-					jumpLandRetryTick = 0.1f;
-					std::int32_t js = 0;
-					static const RE::BSFixedString kSyncJump{ "iSyncJumpState" };
-					a_player->GetGraphVariableImplInt(kSyncJump, js);
-					if (js <= 0) {
-						logger::info("[Mover] post-move: graph landed (iSyncJumpState=0)");
-						jumpLandRetryT = 0.0f;
-					} else {
-						static const RE::BSFixedString kJumpLand{ "jumpLand" };
-						a_player->NotifyAnimationGraphImpl(kJumpLand);
-						if (jumpLandRetryT <= 0.0f) {
-							logger::warn(
-								"[Mover] post-move jumpLand retries exhausted (iSyncJumpState still {})", js);
-						}
-					}
-				}
-			}
-			return;
-		}
+		if (!active) return;
 
 		auto* settings = Settings::GetSingleton();
 		a_dt *= settings->moverTimeScale;
@@ -1291,6 +1261,37 @@ namespace F4Parkour
 		phase = MovePhase::Idle;
 		kind = MoveKind::None;
 		hasLastPos = false;
+	}
+
+	void Mover::PostMoveTick(RE::PlayerCharacter* a_player, float a_dt)
+	{
+		// Post-move jumpLand retry — the manager calls this every frame the
+		// mover is IDLE (the retry placed inside Update never ran: Update is
+		// only called while a move is active). This is the AVF-proven
+		// context: live simulation, special idle over, controller grounded.
+		// Fire from the jump's airborne states (1 rising / 2 falling) until
+		// the graph leaves them; any other value means the landing is in
+		// progress — stop nudging and let it finish (over-driving the event
+		// through the land state is what restarted the cycle).
+		if (jumpLandRetryT <= 0.0f || !a_player || active) return;
+		jumpLandRetryT -= a_dt;
+		jumpLandRetryTick -= a_dt;
+		if (jumpLandRetryTick > 0.0f) return;
+		jumpLandRetryTick = 0.1f;
+
+		std::int32_t js = 0;
+		static const RE::BSFixedString kSyncJump{ "iSyncJumpState" };
+		a_player->GetGraphVariableImplInt(kSyncJump, js);
+		if (js == 1 || js == 2) {
+			static const RE::BSFixedString kJumpLand{ "jumpLand" };
+			a_player->NotifyAnimationGraphImpl(kJumpLand);
+			if (jumpLandRetryT <= 0.0f) {
+				logger::warn("[Mover] post-move jumpLand retries exhausted (iSyncJumpState still {})", js);
+			}
+		} else {
+			logger::info("[Mover] post-move: jump state resolved (iSyncJumpState={})", js);
+			jumpLandRetryT = 0.0f;
+		}
 	}
 
 	void Mover::Cancel(RE::PlayerCharacter* a_player)
