@@ -572,28 +572,23 @@ namespace F4Parkour
 		moveTier = tier;
 		AnimHijack::GetSingleton()->OnMoveStart(a_player, kind, height, tier);
 
-		// LAND AT THE BEGINNING (air-start mantles): resolve the hijacked
-		// jump NOW, under the cover of the climb animation, instead of
-		// letting the graph carry an unresolved jump through the whole move
-		// and replay fall->land afterwards. Pin the grounded contract and
-		// fire "jumpLand" while simulation is still LIVE — kNoSim is
-		// deferred two frames so the engine actually processes the landing
-		// (mid-move fires under kNoSim were log-proven to be refused). The
-		// overriding idle owns the pose from frame zero, so whatever land
-		// blend the graph runs is invisible inside the climb.
+		// LAND AT THE BEGINNING, FOR REAL (air-start mantles): synthetic
+		// jumpLand fires were log-proven no-ops — the state never moved,
+		// and it NEVER moves from the rising state (1); the only thing the
+		// engine always honors is REAL SUPPORT under live simulation. So
+		// for the first few frames the CONTROLLER is parked on the verified
+		// landing surface with a small downward push and simulation left
+		// live: the engine performs its complete NATIVE landing (state
+		// machine + its own graph events — the vanilla "landed on a roof
+		// mid-jump" path) while the REF follows the authored curve and the
+		// climb idle owns the pose. kNoSim engages when the window closes.
 		simDeferFrames = 0;
 		if (startedInAir && kind == MoveKind::Mantle) {
-			PinGroundedState(a_player);
 			std::int32_t js = 0;
 			static const RE::BSFixedString kSyncJump{ "iSyncJumpState" };
 			a_player->GetGraphVariableImplInt(kSyncJump, js);
-			if (js > 0) {
-				static const RE::BSFixedString kJumpLand{ "jumpLand" };
-				a_player->NotifyAnimationGraphImpl(kJumpLand);
-			}
-			simDeferFrames = 2;
-			logger::info("[Mover] start-of-move landing: jumpLand {} (iSyncJumpState was {})",
-				js > 0 ? "fired" : "not needed", js);
+			simDeferFrames = 3;
+			logger::info("[Mover] native landing window opened at start (iSyncJumpState={})", js);
 		} else {
 			SetNoSim(a_player, true);
 		}
@@ -1019,7 +1014,12 @@ namespace F4Parkour
 		const bool groundAsIdle =
 			authoredMode ||
 			(startedInAir && kind == MoveKind::Mantle && phase == MovePhase::Committed);
-		if (!startedInAir || groundAsIdle) {
+		if (simDeferFrames > 0) {
+			// Native landing window: HANDS OFF the controller state — the
+			// engine is performing the real landing on the parked controller
+			// below; pinning kOnGround here would bypass the very
+			// transition we are waiting for.
+		} else if (!startedInAir || groundAsIdle) {
 			PinGroundedState(a_player);
 			// Force the graph to LAND, once, under the cover of the climb
 			// animation — the ActorVelocityFramework recipe: when the graph
@@ -1080,7 +1080,20 @@ namespace F4Parkour
 		// fall-throughs blamed on per-frame warps were really the
 		// uncalibrated center-offset burying the capsule; calibration now
 		// happens at Start and every warp self-verifies.)
-		WarpController(a_player, pos);
+		//
+		// EXCEPT during the native landing window: the controller is parked
+		// just above the VERIFIED LANDING with a small downward push so the
+		// engine's live simulation makes real ground contact and performs
+		// its complete native landing (the ref keeps following the curve —
+		// the two are already decoupled during a move).
+		if (simDeferFrames > 0) {
+			RE::NiPoint3 landSpot = endPos;
+			landSpot.z += 2.0f;
+			WarpController(a_player, landSpot);
+			SetVelocity(a_player, { 0.0f, 0.0f, -60.0f });
+		} else {
+			WarpController(a_player, pos);
+		}
 
 		// Camera dip: DISABLED for now per playtest feedback (the pivot
 		// module stays in place for a future pass; nothing calls it).
@@ -1096,7 +1109,9 @@ namespace F4Parkour
 		// of pinning it to zero. The sprint/move state machinery keeps
 		// seeing real speed, so a vault at sprint stays "moving" and the
 		// exit hand-off has no dead frame ("stop, hop, resume" fix).
-		if (hasLastPos && a_dt > 1.0e-4f) {
+		// Skipped during the native landing window — it would overwrite
+		// the downward push the landing contact depends on.
+		if (simDeferFrames == 0 && hasLastPos && a_dt > 1.0e-4f) {
 			RE::NiPoint3 vel{
 				(pos.x - lastPos.x) / a_dt,
 				(pos.y - lastPos.y) / a_dt,
