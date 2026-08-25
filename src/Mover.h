@@ -101,6 +101,7 @@ namespace F4Parkour
 		bool         hasLastPos{ false };
 		bool         earlySneakSent{ false };
 		bool         startedInAir{ false };  // real jump anim is playing
+		bool         jumpLandFired{ false }; // one-shot graph "jumpLand" per move
 		// Authored-curve mode: a high mantle rides the animation's own
 		// exported root trajectory in lockstep (duration = clip length,
 		// no easing, no align glide — the measured-vs-nominal scaling

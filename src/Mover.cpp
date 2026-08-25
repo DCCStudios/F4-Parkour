@@ -309,6 +309,7 @@ namespace F4Parkour
 		endBlend = 1.0f;
 		watchdogTimer = 0.0f;
 		earlySneakSent = false;
+		jumpLandFired = false;
 
 		// Calibrate the controller-offset convention NOW, while the
 		// reference and controller are guaranteed in sync (standing at
@@ -971,6 +972,26 @@ namespace F4Parkour
 			(startedInAir && kind == MoveKind::Mantle && phase == MovePhase::Committed);
 		if (!startedInAir || groundAsIdle) {
 			PinGroundedState(a_player);
+			// Force the graph to LAND, once, under the cover of the climb
+			// animation — the ActorVelocityFramework recipe: when the graph
+			// still holds a jump (iSyncJumpState > 0), fire the "jumpLand"
+			// event so its jump state machine resolves NOW, invisibly under
+			// the overriding idle, instead of blending idle -> multi-second
+			// fall -> land after the move. Variable clears alone proved
+			// insufficient: the state machine transitions on EVENTS.
+			if (startedInAir && !jumpLandFired) {
+				jumpLandFired = true;
+				std::int32_t jumpState = 0;
+				static const RE::BSFixedString kSyncJump{ "iSyncJumpState" };
+				a_player->GetGraphVariableImplInt(kSyncJump, jumpState);
+				if (jumpState > 0) {
+					static const RE::BSFixedString kJumpLand{ "jumpLand" };
+					a_player->NotifyAnimationGraphImpl(kJumpLand);
+					logger::info("[Mover] jumpLand force-fired mid-move (iSyncJumpState was {})", jumpState);
+				} else {
+					logger::info("[Mover] jumpLand not needed mid-move (iSyncJumpState=0)");
+				}
+			}
 		} else {
 			// Air starts keep their honest air state, but the capsule
 			// pitch integrator still gets pinned — it is pure rotation
@@ -1134,6 +1155,17 @@ namespace F4Parkour
 			ClearFallState(a_player);
 			if (landGrounded) {
 				SetVelocity(a_player, { 0.0f, 0.0f, 0.0f });
+				// Belt and braces: if the graph STILL holds a jump at the
+				// hand-off (mid-move fire missed or was re-entered), land it
+				// now — better a brief land blend than seconds of falling.
+				std::int32_t jumpState = 0;
+				static const RE::BSFixedString kSyncJump{ "iSyncJumpState" };
+				a_player->GetGraphVariableImplInt(kSyncJump, jumpState);
+				if (jumpState > 0) {
+					static const RE::BSFixedString kJumpLand{ "jumpLand" };
+					a_player->NotifyAnimationGraphImpl(kJumpLand);
+					logger::info("[Mover] jumpLand fired at Finish (iSyncJumpState was still {})", jumpState);
+				}
 				logger::info("[Mover] Air-start move - resolved grounded on the verified landing");
 			} else {
 				SetVelocity(a_player, { 0.0f, 0.0f, -60.0f });

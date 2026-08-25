@@ -404,6 +404,21 @@ namespace
 			}
 		}
 
+		// Headroom AT the landing point (never vault INTO an object): the
+		// back-clearance ray above covers the frontal corridor, but nothing
+		// verified vertical space where the capsule actually arrives — an
+		// overhanging shelf/beam over the landing would embed the player.
+		{
+			RE::NiPoint3 lhStart = Add(landing, RE::NiPoint3{ 0.0f, 0.0f, 5.0f });
+			Raycast::RayHit lh{};
+			Raycast::CastDir(lhStart, up, Detection::kCrouchHeight, lh);
+			DbgRay(lhStart, up, Detection::kCrouchHeight, lh, !lh.hit, "land head");
+			if (lh.hit) {
+				DbgReject("vault", "no headroom at the landing ({:.0f}u above)", lh.distance);
+				return;
+			}
+		}
+
 		// 4. Railing / thin-structure checks (SkyParkourNG): an up ray on
 		// the ledge detects railing-like geometry; side rays reject
 		// horizontally tiny posts.
@@ -634,6 +649,62 @@ namespace
 			// Top depth — the thin-top rule.
 			const float topDepth = MeasureTopDepth(ledgePoint, a_dir, std::max(settings->minMantleDepth * 2.0f, 60.0f));
 			if (topDepth < settings->minMantleDepth) {
+				// THIN-WALL VAULT-OVER (the chain-link fence rule): a lip
+				// you cannot STAND on but with ground on the far side is a
+				// VAULT, not a dead end. These walls sit above the vault
+				// scan's height cap (its sweep aborts on the too-high run),
+				// so without this branch a tall fence produced NOTHING and
+				// could only be cleared by jumping first (air-vault height
+				// math). The lip already passed the head-LOS check above.
+				constexpr float kMaxThinWallVaultHeight = 135.0f;
+				const float relHeight = ledgePoint.z - playerPos.z;
+				if (!a_out.vaultEligible && relHeight <= kMaxThinWallVaultHeight) {
+					const RE::NiPoint3 upv{ 0.0f, 0.0f, 1.0f };
+					const RE::NiPoint3 downv{ 0.0f, 0.0f, -1.0f };
+					// Room to pass over the top.
+					RE::NiPoint3 overStart = Add(ledgePoint, RE::NiPoint3{ 0.0f, 0.0f, 5.0f });
+					Raycast::RayHit over{};
+					Raycast::CastDir(overStart, upv, 60.0f, over);
+					if (!over.hit) {
+						// Far-side ground, margined a full capsule past the wall.
+						const float pastWall = std::max(topDepth, 4.0f) + Detection::kCapsuleRadius + 12.0f;
+						RE::NiPoint3 landing = Add(ledgePoint, Mul(a_dir, pastWall));
+						landing.z = ledgePoint.z - 2.0f;
+						Raycast::RayHit lg{};
+						Raycast::CastDir(landing, downv, settings->maxVaultDrop + 20.0f, lg);
+						if (lg.hit) {
+							landing.z = (ledgePoint.z - 2.0f) - lg.distance;
+							const float fenceDrop = ledgePoint.z - landing.z;
+							const float landRise = landing.z - playerPos.z;
+							// Headroom AT the landing (never vault INTO an object).
+							RE::NiPoint3 lHeadStart = Add(landing, RE::NiPoint3{ 0.0f, 0.0f, 5.0f });
+							Raycast::RayHit lHead{};
+							Raycast::CastDir(lHeadStart, upv, Detection::kCrouchHeight, lHead);
+							// Back clearance for the capsule past the wall.
+							RE::NiPoint3 clrStart = Add(ledgePoint, Mul(a_dir, std::max(topDepth, 4.0f)));
+							clrStart.z = landing.z + 40.0f;
+							Raycast::RayHit clr{};
+							Raycast::CastDir(clrStart, a_dir, settings->minBackClearance, clr);
+							if (fenceDrop >= 25.0f && fenceDrop <= settings->maxVaultDrop &&
+								landRise <= 80.0f && !lHead.hit && !clr.hit &&
+								!BelowWater(a_player, landing)) {
+								a_out.vaultEligible = true;
+								a_out.vaultLedge = ledgePoint;
+								a_out.vaultHeight = relHeight;
+								a_out.vaultTopDepth = topDepth;
+								a_out.vaultLanding = landing;
+								a_out.vaultDrop = fenceDrop;
+								if (settings->debugEnabled) {
+									DebugDraw::GetSingleton()->AddMarker(ledgePoint, 0xFF00E060, "fence vault");
+									DebugDraw::GetSingleton()->AddMarker(landing, 0xFFFFB020, "landing");
+									DebugDraw::GetSingleton()->Event(std::format(
+										"thin-wall vault accepted: h={:.0f} depth={:.0f} drop={:.0f}",
+										relHeight, topDepth, fenceDrop));
+								}
+							}
+						}
+					}
+				}
 				DbgReject("mantle", "top depth {:.0f} below {:.0f} at step {} - trying further",
 					topDepth, settings->minMantleDepth, i);
 				continue;
