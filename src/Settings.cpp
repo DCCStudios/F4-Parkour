@@ -21,6 +21,7 @@ namespace F4Parkour
 		autoStepUp        = getB("General", "bAutoStepUp", autoStepUp);
 		allowInAir        = getB("General", "bAllowInAir", allowInAir);
 		allowAirVault     = getB("General", "bAllowAirVault", allowAirVault);
+		allowAirHighMantle = getB("General", "bAllowAirHighMantle", allowAirHighMantle);
 		autoAirGrab       = getB("General", "bAutoAirGrab", autoAirGrab);
 		airAutoGrabDelay  = getF("General", "fAirAutoGrabDelay", airAutoGrabDelay);
 		highMantleCameraDirector = getB("General", "bHighMantleCameraDirector", highMantleCameraDirector);
@@ -124,6 +125,7 @@ namespace F4Parkour
 		setB("General", "bAutoStepUp", autoStepUp);
 		setB("General", "bAllowInAir", allowInAir);
 		setB("General", "bAllowAirVault", allowAirVault);
+		setB("General", "bAllowAirHighMantle", allowAirHighMantle);
 		setB("General", "bAutoAirGrab", autoAirGrab);
 		setF("General", "fAirAutoGrabDelay", airAutoGrabDelay);
 		setB("General", "bHighMantleCameraDirector", highMantleCameraDirector);

@@ -359,6 +359,19 @@ namespace F4Parkour
 		startPos = { a_player->data.location.x, a_player->data.location.y, a_player->data.location.z };
 		dir = cand.approachDir;
 
+		// Optional gate: HIGH mantles initiated from the air (jump-then-
+		// grab). Runs in the dry-run too, so the indicator ring and the
+		// jump key always agree. Grounded high mantles and low/mid air
+		// grabs are unaffected.
+		if (a_kind == MoveKind::Mantle && startedInAir &&
+			!Settings::GetSingleton()->allowAirHighMantle &&
+			NearestTier(preset.mantleHeights, a_candidate.mantleHeight) == 2) {
+			if (!a_dryRun) {
+				logger::info("[Mover] Air high mantle refused (bAllowAirHighMantle=false)");
+			}
+			return false;
+		}
+
 		// Authored-curve mode: a HIGH mantle rides the exported root
 		// trajectory of its animation (tools/export_root_curve.py), so the
 		// path and the clip are the same curve and cannot disagree — the

@@ -24,7 +24,11 @@ namespace F4Parkour
 		bool  autoParkourSprint{ false };   // auto-vault while sprinting
 		bool  autoStepUp{ false };          // auto-vault knee-height obstacles
 		bool  allowInAir{ true };           // air-mantle after a jump
-		bool  allowAirVault{ true };        // also air-VAULT (not just mantle) in the air
+		bool  allowAirVault{ true };
+		// High-tier mantles initiated FROM THE AIR (jump-then-grab) are the
+		// most complex hand-off; this lets them be disabled independently
+		// while grounded high mantles and low/mid air grabs keep working.
+		bool  allowAirHighMantle{ true };        // also air-VAULT (not just mantle) in the air
 		bool  autoAirGrab{ false };         // auto-grab a ledge while falling (Dying Light assist)
 		float airAutoGrabDelay{ 0.3f };     // fallTime before auto-grab arms
 		bool  allowThirdPerson{ true };

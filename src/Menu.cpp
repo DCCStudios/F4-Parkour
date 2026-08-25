@@ -512,6 +512,9 @@ namespace
 		CheckboxTip("Allow air vaults too", &s->allowAirVault,
 			"Also vault (not just mantle) while airborne - a mid-flight clear of a low "
 			"obstacle. Needs 'Allow while airborne'.");
+		CheckboxTip("Allow HIGH mantles from the air", &s->allowAirHighMantle,
+			"Jump-then-grab onto HIGH-tier ledges. Off = high mantles only start from the "
+			"ground; low/mid air grabs and grounded high mantles are unaffected.");
 		CheckboxTip("Auto-grab while falling", &s->autoAirGrab,
 			"Automatically grab a ledge you are falling toward, no button press (Dying Light "
 			"reach-and-catch assist). Off = you must press jump in the air.");
@@ -561,6 +564,9 @@ namespace
 		CheckboxTip("Auto step-up (knee-height only)", &s->autoStepUp,
 			"Automatically hop obstacles below the lowest vault tier while sprinting - the "
 			"kind that hide under your FOV up close (Dying Light does this unconditionally).");
+		SliderTip("Max mantle height", &s->maxMantleHeight, 60.0f, 300.0f, "%.0f",
+			"Tallest ledge a GROUNDED mantle can reach (game units; a person is ~128). "
+			"Airborne grabs add 'air grab extra reach' on top of this.");
 		SliderTip("Auto engage distance", &s->autoEngageDistance, 20.0f, 150.0f, "%.0f",
 			"How close (game units) an obstacle must be before an automatic move fires.");
 
@@ -667,9 +673,9 @@ namespace
 		ch |= ImGuiMCP::SliderFloat("High time##vd", &p.vaultDurations[2], 0.15f, 3.0f, "%.2fs");
 		ImGuiMCP::Spacing();
 		ImGuiMCP::Text("Mantle tiers (up on top)");
-		ch |= ImGuiMCP::SliderFloat("Low height##m", &p.mantleHeights[0], 30.0f, 200.0f, "%.0f");
-		ch |= ImGuiMCP::SliderFloat("Mid height##m", &p.mantleHeights[1], 30.0f, 200.0f, "%.0f");
-		ch |= ImGuiMCP::SliderFloat("High height##m", &p.mantleHeights[2], 30.0f, 200.0f, "%.0f");
+		ch |= ImGuiMCP::SliderFloat("Low height##m", &p.mantleHeights[0], 30.0f, 300.0f, "%.0f");
+		ch |= ImGuiMCP::SliderFloat("Mid height##m", &p.mantleHeights[1], 30.0f, 300.0f, "%.0f");
+		ch |= ImGuiMCP::SliderFloat("High height##m", &p.mantleHeights[2], 30.0f, 300.0f, "%.0f");
 		ch |= ImGuiMCP::SliderFloat("Low time##md", &p.mantleDurations[0], 0.15f, 3.0f, "%.2fs");
 		ch |= ImGuiMCP::SliderFloat("Mid time##md", &p.mantleDurations[1], 0.15f, 3.0f, "%.2fs");
 		ch |= ImGuiMCP::SliderFloat("High time##md", &p.mantleDurations[2], 0.15f, 3.0f, "%.2fs");
