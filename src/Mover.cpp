@@ -720,6 +720,37 @@ namespace F4Parkour
 		// design. Vaults keep the check: their path goes OVER an obstacle
 		// and mid-air clearance is real geometry the vault scan's
 		// endpoint tests do not fully cover.
+		// PATH-CORRIDOR chain (both kinds): detection stays the sole
+		// authority over the TARGET (round 30), but nothing was checking
+		// the TRAVEL — a separate rock in the middle of the path let the
+		// move pass straight through it ("mantled/vaulted through a
+		// rock"). Walk the actual path at capsule mid-height and stop at
+		// the FIRST hit (origins beyond a pass-through sit inside
+		// collision and lie). A hit close to the lip, or late in the
+		// path, is the climbed obstacle's own face — the rising leg hugs
+		// and passes it by design (domed boulders, round 22/30) and must
+		// stay allowed. Only an EARLY hit FAR from the lip is an
+		// unrelated obstruction.
+		{
+			RE::NiPoint3 prev = SamplePath(0.0f);
+			prev.z += 40.0f;
+			for (int i = 1; i <= 8; ++i) {
+				RE::NiPoint3 p = SamplePath(static_cast<float>(i) / 8.0f);
+				p.z += 40.0f;
+				Raycast::RayHit hit{};
+				if (Raycast::Cast(prev, p, hit) && hit.hit) {
+					const float dx = hit.point.x - a_ledge.x;
+					const float dy = hit.point.y - a_ledge.y;
+					const float distToLip = std::sqrt(dx * dx + dy * dy);
+					if (i <= 6 && distToLip > 45.0f) {
+						return false;  // solid mass mid-path, unrelated to the wall
+					}
+					break;
+				}
+				prev = p;
+			}
+		}
+
 		if (kind == MoveKind::Mantle) {
 			return true;
 		}
