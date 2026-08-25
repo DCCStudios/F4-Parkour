@@ -572,7 +572,31 @@ namespace F4Parkour
 		moveTier = tier;
 		AnimHijack::GetSingleton()->OnMoveStart(a_player, kind, height, tier);
 
-		SetNoSim(a_player, true);
+		// LAND AT THE BEGINNING (air-start mantles): resolve the hijacked
+		// jump NOW, under the cover of the climb animation, instead of
+		// letting the graph carry an unresolved jump through the whole move
+		// and replay fall->land afterwards. Pin the grounded contract and
+		// fire "jumpLand" while simulation is still LIVE — kNoSim is
+		// deferred two frames so the engine actually processes the landing
+		// (mid-move fires under kNoSim were log-proven to be refused). The
+		// overriding idle owns the pose from frame zero, so whatever land
+		// blend the graph runs is invisible inside the climb.
+		simDeferFrames = 0;
+		if (startedInAir && kind == MoveKind::Mantle) {
+			PinGroundedState(a_player);
+			std::int32_t js = 0;
+			static const RE::BSFixedString kSyncJump{ "iSyncJumpState" };
+			a_player->GetGraphVariableImplInt(kSyncJump, js);
+			if (js > 0) {
+				static const RE::BSFixedString kJumpLand{ "jumpLand" };
+				a_player->NotifyAnimationGraphImpl(kJumpLand);
+			}
+			simDeferFrames = 2;
+			logger::info("[Mover] start-of-move landing: jumpLand {} (iSyncJumpState was {})",
+				js > 0 ? "fired" : "not needed", js);
+		} else {
+			SetNoSim(a_player, true);
+		}
 
 		// Prove the warp path immediately, while reference and controller
 		// are known to coincide: a no-op warp to the start position runs
@@ -834,6 +858,17 @@ namespace F4Parkour
 
 		auto* settings = Settings::GetSingleton();
 		a_dt *= settings->moverTimeScale;
+
+		// Close the start-of-move landing window: the engine had its live
+		// frames to process the landing we fired at Start — freeze the
+		// controller now and record whether the graph took it.
+		if (simDeferFrames > 0 && --simDeferFrames == 0) {
+			SetNoSim(a_player, true);
+			std::int32_t js = 0;
+			static const RE::BSFixedString kSyncJump{ "iSyncJumpState" };
+			a_player->GetGraphVariableImplInt(kSyncJump, js);
+			logger::info("[Mover] start-of-move landing window closed (iSyncJumpState now {})", js);
+		}
 
 		t += a_dt;
 		if (endBlend < 1.0f) {

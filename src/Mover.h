@@ -110,6 +110,8 @@ namespace F4Parkour
 		bool         jumpLandFired{ false }; // one-shot graph "jumpLand" per move
 		float        jumpLandRetryT{ 0.0f };    // post-move nudge window (air starts)
 		float        jumpLandRetryTick{ 0.0f };
+		int          simDeferFrames{ 0 };       // live-sim frames before kNoSim
+		                                        // (start-of-move landing window)
 		// Authored-curve mode: a high mantle rides the animation's own
 		// exported root trajectory in lockstep (duration = clip length,
 		// no easing, no align glide — the measured-vs-nominal scaling
