@@ -66,6 +66,12 @@ namespace F4Parkour
 		}
 		static void RescueTo(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_pos);
 
+		// Re-assert a position (reference + controller, scene updated)
+		// WITHOUT touching velocity — for pinning the player across an
+		// operation that must not move them (the equip-skip graph
+		// fast-forward integrates motion as a side effect).
+		static void HoldPosition(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_pos);
+
 		// Landing-guard correction: a short smoothstep GLIDE to the target
 		// instead of a teleport (a snap every move end reads as constant
 		// rubber-banding). No animation, no keywords, no guard re-arm.

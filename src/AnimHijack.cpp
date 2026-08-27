@@ -1,5 +1,6 @@
 #include "PCH.h"
 #include "AnimHijack.h"
+#include "Mover.h"
 #include "Settings.h"
 #include "SyntheticInput.h"
 
@@ -388,7 +389,23 @@ namespace F4Parkour
 			// (UpdateAnimation with a huge delta), which supersedes
 			// SeamlessInspect's InitializeActorInstant reset and doesn't
 			// hard-reset the actor.
+			//
+			// POSITION PINNED across the call: the fast-forward advances
+			// the WHOLE actor update by the huge delta, and with vault-exit
+			// momentum still live the movement integration teleported the
+			// player (every teleport report matched an "IdleStop ->
+			// equip-skip fired" ~0.2s after "vault finished"; reproduced
+			// only with idle + dyn event = exactly this arm path). The call
+			// exists to skip the EQUIP transition — any motion it
+			// integrates is garbage. Velocity is left alone so the vault's
+			// restored momentum keeps flowing after the pin.
+			const RE::NiPoint3 held{
+				player->data.location.x,
+				player->data.location.y,
+				player->data.location.z
+			};
 			player->UpdateAnimation(1000.0f);
+			Mover::HoldPosition(player, held);
 		}
 		skipEquipArmed.store(false, std::memory_order_relaxed);
 		logger::info("[AnimHijack] IdleStop -> equip-skip fired (graph fast-forwarded)");

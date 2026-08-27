@@ -1505,4 +1505,12 @@ namespace F4Parkour
 		a_player->Update3DPosition(true);
 		SetVelocity(a_player, { 0.0f, 0.0f, 0.0f });
 	}
+
+	void Mover::HoldPosition(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_pos)
+	{
+		if (!a_player) return;
+		AssignPoint3A(a_player->data.location, a_pos);
+		WarpController(a_player, a_pos);
+		a_player->Update3DPosition(true);
+	}
 }
