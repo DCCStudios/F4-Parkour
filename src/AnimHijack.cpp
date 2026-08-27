@@ -1,6 +1,5 @@
 #include "PCH.h"
 #include "AnimHijack.h"
-#include "Mover.h"
 #include "Settings.h"
 #include "SyntheticInput.h"
 
@@ -271,16 +270,12 @@ namespace F4Parkour
 		// on this.
 		//
 		// Two test-idle slots: slot 2 (Mantle.hkx) wins over slot 1
-		// (Ledge.hkx) on a tier that has both on, and additionally arms
-		// the equip-skip so the fast-equip after its idle is suppressed.
+		// (Ledge.hkx) on a tier that has both on. (The slot-2 equip-skip
+		// is retired — post-idle equip handling lives OAR-side now.)
 		auto* settings = Settings::GetSingleton();
 		const bool vault = (a_kind == MoveKind::Vault);
 		const bool slot2 = vault ? settings->testIdle2Vault[a_tier] : settings->testIdle2Mantle[a_tier];
 		const bool slot1 = vault ? settings->testIdleVault[a_tier] : settings->testIdleMantle[a_tier];
-
-		// Fresh each move: a non-slot-2 move disarms any stale skip flag so
-		// it can never fire on an unrelated later idle.
-		skipEquipArmed.store(false, std::memory_order_relaxed);
 
 		// Automatic weapon-away idles: with the weapon sheathed (hands
 		// free), a vault plays Vault.hkx at ANY height, a low/mid mantle
@@ -325,11 +320,7 @@ namespace F4Parkour
 				played = a_player->currentProcess->SetupSpecialIdle(
 					*a_player, RE::DEFAULT_OBJECT::kActionIdle, testIdle, false, a_player);
 			}
-			if (slot2 && played) {
-				skipEquipArmed.store(true, std::memory_order_relaxed);
-			}
 			idleRetryPending = !played;
-			idleRetryArmsSkip = slot2;
 			if (!played) {
 				// State snapshot so the log says WHY the engine refused.
 				std::uint32_t hkState = 999;
@@ -346,9 +337,9 @@ namespace F4Parkour
 					hkState,
 					static_cast<std::uint32_t>(a_player->weaponState));
 			} else {
-				logger::info("[AnimHijack] {} idle '{}' (event '{}') -> true{}",
+				logger::info("[AnimHijack] {} idle '{}' (event '{}') -> true",
 					autoIdle ? "Auto" : (slot2 ? "Test slot 2" : "Test slot 1"),
-					path, evt, slot2 ? " [equip-skip armed]" : "");
+					path, evt);
 			}
 		} else if (settings->playMeleeAnim && actionMelee) {
 			const bool ok = a_player->PerformAction(actionMelee, nullptr);
@@ -368,47 +359,18 @@ namespace F4Parkour
 			played = a_player->currentProcess->SetupSpecialIdle(
 				*a_player, RE::DEFAULT_OBJECT::kActionIdle, testIdle, false, a_player);
 		}
-		if (played && idleRetryArmsSkip) {
-			skipEquipArmed.store(true, std::memory_order_relaxed);
-		}
 		logger::info("[AnimHijack] Test idle apex retry -> {}", played);
 	}
 
 	// ============================================================
-	// Equip-skip on IdleStop (SeamlessInspect technique)
+	// Anim-graph event sink. The equip-skip that used to fire here on
+	// "IdleStop" is RETIRED (2026-08-27): the post-idle fast-equip is
+	// handled OAR-side now, and its UpdateAnimation(1000) fast-forward
+	// integrated the huge delta into live player movement — the
+	// post-vault teleport (position-pinning the call only reduced it).
 	// ============================================================
-	void AnimHijack::OnAnimEvent(const RE::BSFixedString& a_tag)
+	void AnimHijack::OnAnimEvent(const RE::BSFixedString& /*a_tag*/)
 	{
-		if (!skipEquipArmed.load(std::memory_order_relaxed)) return;
-		if (a_tag != "IdleStop") return;
-
-		auto* player = RE::PlayerCharacter::GetSingleton();
-		if (player) {
-			// Fast-forward the graph through the whole post-idle equip
-			// transition in a single frame — the IdleStopFix technique
-			// (UpdateAnimation with a huge delta), which supersedes
-			// SeamlessInspect's InitializeActorInstant reset and doesn't
-			// hard-reset the actor.
-			//
-			// POSITION PINNED across the call: the fast-forward advances
-			// the WHOLE actor update by the huge delta, and with vault-exit
-			// momentum still live the movement integration teleported the
-			// player (every teleport report matched an "IdleStop ->
-			// equip-skip fired" ~0.2s after "vault finished"; reproduced
-			// only with idle + dyn event = exactly this arm path). The call
-			// exists to skip the EQUIP transition — any motion it
-			// integrates is garbage. Velocity is left alone so the vault's
-			// restored momentum keeps flowing after the pin.
-			const RE::NiPoint3 held{
-				player->data.location.x,
-				player->data.location.y,
-				player->data.location.z
-			};
-			player->UpdateAnimation(1000.0f);
-			Mover::HoldPosition(player, held);
-		}
-		skipEquipArmed.store(false, std::memory_order_relaxed);
-		logger::info("[AnimHijack] IdleStop -> equip-skip fired (graph fast-forwarded)");
 	}
 
 	void AnimHijack::OnMoveConverted(RE::PlayerCharacter* a_player, int a_mantleTier)

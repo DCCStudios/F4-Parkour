@@ -50,11 +50,12 @@ namespace F4Parkour
 		// collision shape).
 		void RequestSneak(RE::PlayerCharacter* a_player);
 
-		// Called from the player anim-graph event hook (main thread). On
-		// "IdleStop" while the equip-skip is armed, resets the actor to
-		// base state instantly so the fast-equip after the idle never
-		// plays — the SeamlessInspect technique, used only by test-idle
-		// slot 2.
+		// Called from the player anim-graph event hook (main thread).
+		// Currently a no-op: the equip-skip it used to run on "IdleStop"
+		// is RETIRED (2026-08-27) — the post-idle fast-equip is handled
+		// OAR-side now, and the UpdateAnimation(1000) fast-forward
+		// integrated the huge delta into player movement (the post-vault
+		// teleport). The hook stays installed for future event needs.
 		void OnAnimEvent(const RE::BSFixedString& a_tag);
 
 		// One retry for a test idle the engine refused at move start
@@ -77,11 +78,7 @@ namespace F4Parkour
 		RE::BGSAction*  actionMelee{ nullptr };
 		RE::TESIdleForm* testIdle{ nullptr };  // runtime idle for the test toggles
 
-		// Equip-skip (SeamlessInspect): armed when test-idle slot 2 plays,
-		// consumed on the next "IdleStop" graph event.
-		std::atomic<bool> skipEquipArmed{ false };
 		bool animEventHookInstalled{ false };
 		bool idleRetryPending{ false };
-		bool idleRetryArmsSkip{ false };
 	};
 }

@@ -961,8 +961,8 @@ namespace
 				tch2 = true;
 			}
 			ImGuiMCP::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f),
-				"Resets the actor to base state on the idle's IdleStop event, suppressing the "
-				"fast-equip - watch the log for '[AnimHijack] IdleStop -> equip-skip fired'.");
+				"Second test-idle slot (wins over slot 1 when both are on). Post-idle equip "
+				"behavior is handled OAR-side; the old in-plugin equip-skip is retired.");
 			if (tch2) s_settingsDirty = true;
 		}
 
