@@ -515,6 +515,9 @@ namespace
 		CheckboxTip("Allow HIGH mantles from the air", &s->allowAirHighMantle,
 			"Jump-then-grab onto HIGH-tier ledges. Off = high mantles only start from the "
 			"ground; low/mid air grabs and grounded high mantles are unaffected.");
+		CheckboxTip("Allow vaulting while aiming", &s->allowVaultWhileAiming,
+			"Vault over low obstacles without leaving ADS. Mantles stay blocked while "
+			"aiming either way - only vaults fire mid-sights.");
 		CheckboxTip("Auto-grab while falling", &s->autoAirGrab,
 			"Automatically grab a ledge you are falling toward, no button press (Dying Light "
 			"reach-and-catch assist). Off = you must press jump in the air.");

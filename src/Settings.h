@@ -28,7 +28,11 @@ namespace F4Parkour
 		// High-tier mantles initiated FROM THE AIR (jump-then-grab) are the
 		// most complex hand-off; this lets them be disabled independently
 		// while grounded high mantles and low/mid air grabs keep working.
-		bool  allowAirHighMantle{ true };        // also air-VAULT (not just mantle) in the air
+		bool  allowAirHighMantle{ true };
+		// Vault while aiming down sights. Mantles stay blocked while
+		// sighted either way (climbing a ledge scoped reads wrong); this
+		// only lets a VAULT over a low obstacle fire mid-ADS.
+		bool  allowVaultWhileAiming{ true };        // also air-VAULT (not just mantle) in the air
 		bool  autoAirGrab{ false };         // auto-grab a ledge while falling (Dying Light assist)
 		float airAutoGrabDelay{ 0.3f };     // fallTime before auto-grab arms
 		bool  allowThirdPerson{ true };

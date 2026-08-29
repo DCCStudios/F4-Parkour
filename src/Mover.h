@@ -36,9 +36,9 @@ namespace F4Parkour
 		void Update(RE::PlayerCharacter* a_player, float a_dt);
 
 		// Per-frame tick while IDLE (the manager calls this when no move is
-		// active): finishes post-move graph work — currently the jumpLand
-		// retry that resolves a hijacked jump's animation state under live
-		// simulation, where the graph provably accepts the event.
+		// active): finishes post-move graph work — the jumpLand retry that
+		// resolves a hijacked jump's animation state, and the vault-exit
+		// momentum sustain.
 		void PostMoveTick(RE::PlayerCharacter* a_player, float a_dt);
 
 		// Abort and restore. Player returns to the start position if

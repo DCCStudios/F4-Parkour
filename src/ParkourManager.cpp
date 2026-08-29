@@ -42,7 +42,9 @@ namespace F4Parkour
 		if (InMenu()) return false;
 		if (a_player->IsDead(true)) return false;
 		if (Detection::IsInPowerArmor(a_player)) return false;
-		if (Detection::IsSighted(a_player)) return false;  // never fight ADS
+		// Aiming: blocked unless vault-while-aiming is on, in which case
+		// detection runs and ContextualIntent scopes it to vaults only.
+		if (Detection::IsSighted(a_player) && !settings->allowVaultWhileAiming) return false;
 		return true;
 	}
 
@@ -58,6 +60,12 @@ namespace F4Parkour
 		// so that decision IS the gate.
 		if (settings->requireForward && !Detection::IsForwardHeld() &&
 			DecideKind(a_player) == MoveKind::Vault) return false;
+
+		// While aiming, only VAULTS are allowed (the toggle that let us get
+		// this far is vault-scoped) — never break ADS to climb a ledge.
+		if (Detection::IsSighted(a_player) && DecideKind(a_player) != MoveKind::Vault) {
+			return false;
+		}
 
 		// Look cone: the candidate must be roughly where the player faces.
 		if (candidate.IsValid()) {
@@ -105,6 +113,10 @@ namespace F4Parkour
 	{
 		const MoveKind kind = (a_forced != MoveKind::None) ? a_forced : DecideKind(a_player);
 		if (kind == MoveKind::None) return false;
+
+		// Final ADS scope, whichever path reached here: aiming allows
+		// VAULTS only. A mantle while sighted never fires.
+		if (kind != MoveKind::Vault && Detection::IsSighted(a_player)) return false;
 
 		if (Mover::GetSingleton()->Start(a_player, candidate, kind)) {
 			Input::SetSuppressed(true);

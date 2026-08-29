@@ -3,6 +3,7 @@
 #include "ParkourTypes.h"
 
 #include <atomic>
+#include <chrono>
 
 namespace F4Parkour
 {

@@ -3,6 +3,8 @@
 #include "Settings.h"
 #include "SyntheticInput.h"
 
+#include <chrono>
+
 #include <Windows.h>
 
 // ============================================================
@@ -274,6 +276,23 @@ namespace F4Parkour
 		// is retired — post-idle equip handling lives OAR-side now.)
 		auto* settings = Settings::GetSingleton();
 		const bool vault = (a_kind == MoveKind::Vault);
+
+		// VAULT WHILE AIMING — keep the weapon aimed, play NO special idle.
+		// SetupSpecialIdle irrecoverably drops the GRAPH's sighted state
+		// (the WPNSightedState node), which breaks the ADS pose and See
+		// Through Scopes' overlay; nothing injected afterward re-drives it
+		// (NotifyAnimationGraph is a graph INPUT that Papyrus listeners
+		// never see; iSyncSightedState did not take). So we do not disturb
+		// sights at all: the parkour KEYWORD is already tagged above, so an
+		// OAR config can animate the vault from the sighted state (track-
+		// filtered to the off arm) with the sighted state — and STS —
+		// untouched throughout.
+		const int gs = static_cast<int>(a_player->gunState);
+		if (vault && (gs == 6 || gs == 8)) {
+			logger::info("[AnimHijack] Sighted vault - weapon stays aimed, no special idle (OAR keyword drives the anim)");
+			return;
+		}
+
 		const bool slot2 = vault ? settings->testIdle2Vault[a_tier] : settings->testIdle2Mantle[a_tier];
 		const bool slot1 = vault ? settings->testIdleVault[a_tier] : settings->testIdleMantle[a_tier];
 
@@ -371,6 +390,10 @@ namespace F4Parkour
 	// ============================================================
 	void AnimHijack::OnAnimEvent(const RE::BSFixedString& /*a_tag*/)
 	{
+		// No-op: the sighted-vault path no longer disturbs the sighted
+		// state, so there is no stray sightedStateExit to counter. The
+		// ProcessEvent hook stays installed for any future graph-event
+		// needs.
 	}
 
 	void AnimHijack::OnMoveConverted(RE::PlayerCharacter* a_player, int a_mantleTier)
@@ -396,6 +419,9 @@ namespace F4Parkour
 		SetGraphVars(a_player, MoveKind::None, 0.0f);
 		static const RE::BSFixedString kEvtEnd{ "F4Parkour_End" };
 		a_player->NotifyAnimationGraphImpl(kEvtEnd);
+		// No ADS restore needed: a sighted vault never dropped sights (we
+		// skip the special idle for it), so the sighted state and See
+		// Through Scopes were never disturbed.
 	}
 
 	void AnimHijack::RequestSneak(RE::PlayerCharacter* a_player)
