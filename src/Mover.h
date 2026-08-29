@@ -116,6 +116,14 @@ namespace F4Parkour
 		bool         jumpLandFired{ false }; // one-shot graph "jumpLand" per move
 		float        jumpLandRetryT{ 0.0f };    // post-move nudge window (air starts)
 		float        jumpLandRetryTick{ 0.0f };
+		// Vault-exit momentum SUSTAIN: a single velocity impulse at Finish
+		// dies on the next engine frame (movement re-derives velocity from
+		// the input state), which read as a full stop. For a short window
+		// the exit velocity keeps being fed, decaying, while forward stays
+		// held — bridging until input-driven movement ramps up (Brink flow).
+		RE::NiPoint3 exitSustainVel{};
+		float        exitSustainT{ 0.0f };
+		float        exitSustainTotal{ 0.0f };
 		int          simDeferFrames{ 0 };       // live-sim frames before kNoSim
 		                                        // (start-of-move landing window)
 		// Authored-curve mode: a high mantle rides the animation's own

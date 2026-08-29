@@ -324,6 +324,7 @@ namespace F4Parkour
 		watchdogTimer = 0.0f;
 		earlySneakSent = false;
 		jumpLandFired = false;
+		exitSustainT = 0.0f;  // never resume a previous move's momentum
 
 		// Calibrate the controller-offset convention NOW, while the
 		// reference and controller are guaranteed in sync (standing at
@@ -1330,6 +1331,7 @@ namespace F4Parkour
 			// Exit-time drop trace (Brink): probe the ground AHEAD along
 			// the exit direction — where the momentum would carry the
 			// player — and clear it when the world falls away.
+			bool dropVeto = false;
 			if (keep > 1.0f) {
 				RE::NiPoint3 aheadStart = {
 					endPos.x + exitDir.x * 50.0f,
@@ -1340,11 +1342,35 @@ namespace F4Parkour
 				Raycast::CastDir(aheadStart, { 0.0f, 0.0f, -1.0f }, settings->momentumDropCutoff + 10.0f, dropHit);
 				if (!dropHit.hit) {
 					keep = 0.0f;
+					dropVeto = true;
 					DebugDraw::GetSingleton()->Event("momentum cleared: high drop past landing");
 				}
 			}
 
 			SetVelocity(a_player, { exitDir.x * keep, exitDir.y * keep, 0.0f });
+
+			// Arm the post-move momentum SUSTAIN: the impulse above dies on
+			// the next engine frame (movement re-derives velocity from the
+			// input state), which read as "the vault brings you to a
+			// complete stop". PostMoveTick keeps feeding the exit velocity,
+			// decaying, while forward stays held — a smooth carry-through
+			// instead of stop-and-reaccelerate.
+			//
+			// WALK-OUT FLOOR: holding forward at vault end means "keep
+			// moving" at ANY entry speed — a walking entry (or a standstill
+			// vault) still exits flowing, floored at a light jog for the
+			// crossfade into input-driven movement. The drop trace vetoes
+			// the floor too: never push the player toward a cliff it just
+			// cleared momentum for.
+			float sustainSpeed = keep;
+			if (!dropVeto && Detection::IsForwardHeld()) {
+				sustainSpeed = std::max(sustainSpeed, 130.0f);
+			}
+			if (sustainSpeed > 40.0f) {
+				exitSustainVel = { exitDir.x * sustainSpeed, exitDir.y * sustainSpeed, 0.0f };
+				exitSustainTotal = 0.35f;
+				exitSustainT = exitSustainTotal;
+			}
 		} else {
 			SetVelocity(a_player, { 0.0f, 0.0f, 0.0f });
 			if (cand.headroom == Headroom::CrouchOnly && settings->sneakOnCrouchOnly && !earlySneakSent) {
@@ -1385,6 +1411,27 @@ namespace F4Parkour
 
 	void Mover::PostMoveTick(RE::PlayerCharacter* a_player, float a_dt)
 	{
+		if (!a_player || active) return;
+
+		// Vault-exit momentum sustain: keep feeding the decaying exit
+		// velocity while forward stays held, so the engine's input-driven
+		// movement ramps up underneath it instead of starting from zero.
+		// Releasing forward, going airborne (walked off an edge), or the
+		// window expiring hands control back untouched.
+		if (exitSustainT > 0.0f) {
+			exitSustainT -= a_dt;
+			if (exitSustainT <= 0.0f || !Detection::IsForwardHeld() ||
+				Detection::IsInAir(a_player)) {
+				exitSustainT = 0.0f;
+			} else {
+				const float f = exitSustainTotal > 1.0e-4f ? exitSustainT / exitSustainTotal : 0.0f;
+				SetVelocity(a_player, {
+					exitSustainVel.x * f,
+					exitSustainVel.y * f,
+					0.0f });
+			}
+		}
+
 		// Post-move jumpLand retry — the manager calls this every frame the
 		// mover is IDLE (the retry placed inside Update never ran: Update is
 		// only called while a move is active). This is the AVF-proven
@@ -1393,7 +1440,7 @@ namespace F4Parkour
 		// the graph leaves them; any other value means the landing is in
 		// progress — stop nudging and let it finish (over-driving the event
 		// through the land state is what restarted the cycle).
-		if (jumpLandRetryT <= 0.0f || !a_player || active) return;
+		if (jumpLandRetryT <= 0.0f) return;
 		jumpLandRetryT -= a_dt;
 		jumpLandRetryTick -= a_dt;
 		if (jumpLandRetryTick > 0.0f) return;
@@ -1462,6 +1509,8 @@ namespace F4Parkour
 		aligning = false;
 		authoredMode = false;
 		authored = nullptr;
+		exitSustainT = 0.0f;
+		jumpLandRetryT = 0.0f;
 		phase = MovePhase::Idle;
 		kind = MoveKind::None;
 		hasLastPos = false;
