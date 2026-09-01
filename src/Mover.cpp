@@ -1028,6 +1028,39 @@ namespace F4Parkour
 
 		const RE::NiPoint3 pos = SamplePath(s);
 
+		// NaN guard (field 2026-08-31): a non-finite sampled position writes NaN
+		// into the player's location and thus the 1P skeleton ROOT node
+		// (skeleton.nif), which NaN-propagates down the whole skeleton to the
+		// Camera (white-screen warp) and the audio listener (tinnitus). Confirmed
+		// via OAR's [OAR-CamProbe] chain walk: the corrupt node is skeleton.nif,
+		// not any pose bone, so the source is this move's position, not the anim.
+		// Never warp the player to a non-finite point: abort the move cleanly at
+		// the last finite position, and log s/duration so the upstream divide that
+		// produced the NaN curve (nominalUp / peak / entrySpeed) can be fixed.
+		if (!(std::isfinite(pos.x) && std::isfinite(pos.y) && std::isfinite(pos.z))) {
+			static std::atomic<uint32_t> s_nanPosLog{ 0 };
+			if (s_nanPosLog.fetch_add(1, std::memory_order_relaxed) < 20) {
+				logger::error("[Mover] NON-FINITE sampled position (s={:.3f} rawT={:.3f} duration={:.3f} "
+					"startZ={:.1f} endZ={:.1f}) - aborting move to avoid skeleton/camera/audio NaN",
+					s, rawT, duration, startPos.z, endPos.z);
+			}
+			RE::NiPoint3 safe = hasLastPos ? lastPos : startPos;
+			if (std::isfinite(safe.x) && std::isfinite(safe.y) && std::isfinite(safe.z)) {
+				AssignPoint3A(a_player->data.location, safe);
+				WarpController(a_player, safe);
+				PinGroundedState(a_player);
+				a_player->Update3DPosition(true);
+			}
+			SetNoSim(a_player, false);
+			RestoreControllerPitch(a_player);
+			SetVelocity(a_player, { 0.0f, 0.0f, 0.0f });
+			active = false;
+			phase = MovePhase::Idle;
+			kind = MoveKind::None;
+			hasLastPos = false;
+			return;
+		}
+
 		// In-flight watchdog. Strictly limited so it can NEVER produce
 		// the "pushed back to where you started" failure:
 		//   * probes only once the capsule is ABOVE the obstacle top —
