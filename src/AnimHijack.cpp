@@ -2,6 +2,7 @@
 #include "AnimHijack.h"
 #include "Settings.h"
 #include "SyntheticInput.h"
+#include "OARConditions.h"
 
 #include <chrono>
 
@@ -248,6 +249,9 @@ namespace F4Parkour
 			RemoveKeywordFrom(form, kwVaultTier[i]);
 			RemoveKeywordFrom(form, kwMantleTier[i]);
 		}
+		// Clear the custom-condition atomics too (RemoveAll is the single
+		// clear point: OnMoveEnd and OnGameLoaded both route through here).
+		OARConditions::ClearAll();
 	}
 
 	void AnimHijack::OnMoveStart(RE::PlayerCharacter* a_player, MoveKind a_kind, float a_height, int a_tier)
@@ -258,6 +262,11 @@ namespace F4Parkour
 		AddKeyword(a_player, kwParkour);
 		AddKeyword(a_player, a_kind == MoveKind::Vault ? kwVault : kwMantle);
 		AddKeyword(a_player, a_kind == MoveKind::Vault ? kwVaultTier[a_tier] : kwMantleTier[a_tier]);
+		// Custom OAR conditions mirror the keywords above; the config gates on
+		// these now (Parkour_IsVault / _IsMantleLow / ...), which OAR binds by
+		// name with no editorID resolution race. Keyword adds stay as harmless
+		// belt-and-braces for any external OAR config still using them.
+		OARConditions::SetMove(a_kind == MoveKind::Vault, a_tier);
 		SetGraphVars(a_player, a_kind, a_height);
 
 		// 2. Notify the graph for anyone listening.

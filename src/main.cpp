@@ -5,6 +5,7 @@
 #include "Input.h"
 #include "AnimHijack.h"
 #include "Menu.h"
+#include "OARConditions.h"
 
 namespace Plugin
 {
@@ -23,6 +24,10 @@ namespace
 			// Every F4SE plugin has returned from Load; the menu framework
 			// module is available regardless of load order.
 			F4Parkour::Menu::Register();
+			// OAR's DLL is loaded but has not parsed configs yet, so register
+			// our custom conditions now - before any HasKeyword-style parse
+			// race could matter. Replaces the DLL-created parkour keywords.
+			OARConditions::RegisterConditions();
 			break;
 
 		case F4SE::MessagingInterface::kGameDataReady:
