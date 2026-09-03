@@ -13,6 +13,7 @@ namespace F4Parkour
 		// the collision shape.
 		constexpr float kPlayerHeight = 120.0f;
 		constexpr float kCrouchHeight = 72.0f;
+		constexpr float kReleaseDescent = 24.0f;  // release vault: authored dip past the lip before the engine's own fall takes over
 		constexpr float kCapsuleRadius = 16.0f;
 
 		// Player state helpers (main thread).
@@ -41,6 +42,10 @@ namespace F4Parkour
 		// the rock" report); holes and drops stay tolerated so scan
 		// permissiveness is unchanged.
 		bool FootprintClear(const RE::NiPoint3& a_center);
+
+		// Headroom classification at an arbitrary point (the same 3x3 grid
+		// the scans use), for a landing the ENGINE chose (release vaults).
+		Headroom HeadroomAt(const RE::NiPoint3& a_pos, const RE::NiPoint3& a_dir);
 
 		// One full detection pass. a_fromAir relaxes the grounded checks
 		// and extends the mantle reach by Settings::airGrabExtraReach.

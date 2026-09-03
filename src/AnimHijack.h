@@ -49,7 +49,9 @@ namespace F4Parkour
 		// Crouch-only mantle completion: enter sneak through the normal
 		// input path (UneducatedShooter and friends keep owning the
 		// collision shape).
-		void RequestSneak(RE::PlayerCharacter* a_player);
+		// Synthetic Sneak press. Returns false when no handler was available
+		// to receive it, so a caller can retry instead of assuming it landed.
+		bool RequestSneak(RE::PlayerCharacter* a_player);
 
 		// Called from the player anim-graph event hook (main thread).
 		// Currently a no-op: the equip-skip it used to run on "IdleStop"

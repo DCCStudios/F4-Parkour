@@ -198,7 +198,11 @@ namespace F4Parkour
 				// "Fell below" only counts while horizontally AT the
 				// landing — a hand-off failure drops you in place; a
 				// hillside drops you while you travel.
-				const bool fellBelow = pos.z < guardPos.z - 60.0f && std::fabs(alongDir) < 40.0f;
+				// ... in BOTH axes, within one capsule footprint: a real step-off
+				// (a stairwell beside the landing) needs the player to have moved.
+				const float lateral = (pos.x - guardPos.x) * -guardDir.y + (pos.y - guardPos.y) * guardDir.x;
+				const bool fellBelow = pos.z < guardPos.z - 60.0f &&
+					std::fabs(alongDir) < 24.0f && std::fabs(lateral) < 24.0f;
 				if (shovedBack || fellBelow) {
 					logger::warn("[Manager] Landing guard fired ({}): gliding to the intended landing",
 						shovedBack ? "shoved backward" : "fell below landing");

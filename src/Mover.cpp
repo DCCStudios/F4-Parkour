@@ -83,6 +83,71 @@ namespace
 		}
 	}
 
+	// Inverse of PinGroundedState for a RELEASE vault. Every Update frame
+	// of a grounded-start vault pins the controller AND the graph grounded,
+	// and the release hand-off resumes live simulation mid-air past the
+	// lip. A controller still flagged supported spends its first step
+	// projecting the exit velocity onto a support plane that no longer
+	// exists (the downward arc dies: "stop, then fall"), and a graph still
+	// told bInAir=false blends the fall in a frame late. Assert airborne
+	// once, with the fall clock starting at the release point.
+	// Release-vault hand-off: emulate WALKING OFF A LEDGE, nothing more.
+	// The first cut asserted airborne here (controller kInAir/unsupported,
+	// graph bInAir/bIsFalling forced true) and the very next playtest
+	// could not jump after any release vault: the graph's airborne
+	// variables are event-driven, and forcing them true outside the
+	// engine's own transition left the jump state machine wedged. Vanilla
+	// handles a supported character stepping into space every day:
+	// checkSupport fails on the next step, the state machine transitions
+	// to InAir and fires its own events. Leave the controller exactly as
+	// the last pinned frame left it; only restart the fall clock at the
+	// release point so fall damage keys off the real drop. The post-move
+	// landing watch (PostMoveTick) is the safety net if the graph still
+	// lands wedged.
+	void ReleaseToAirborne(RE::PlayerCharacter* a_player)
+	{
+		ClearFallState(a_player);
+	}
+
+	// Vault landings: verify the capsule is actually clear of the obstacle's
+	// far face and nudge it forward if not (warping into overlap is what
+	// let the depenetration solver throw the player backwards when
+	// simulation resumed). Probed at three heights spanning the capsule (a
+	// flared base or footing below chest height is invisible to a single
+	// mid-height ray) and measured PERPENDICULAR to the face through the
+	// hit normal: an oblique approach shortens the along-ray distance by
+	// cos(angle), so along-ray clearance alone left the capsule inside the
+	// wall at 45 degrees.
+	void NudgeClearOfFarFace(RE::NiPoint3& a_pt, const RE::NiPoint3& a_dir)
+	{
+		constexpr float kHeights[3] = { 8.0f, 40.0f, 80.0f };
+		const float clearNeeded = Detection::kCapsuleRadius + 4.0f;
+		const RE::NiPoint3 backDir{ -a_dir.x, -a_dir.y, 0.0f };
+		float nudge = 0.0f;
+		for (float h : kHeights) {
+			RE::NiPoint3 probe = a_pt;
+			probe.z += h;
+			Raycast::RayHit back{};
+			Raycast::CastDir(probe, backDir, clearNeeded * 2.0f, back);
+			if (!back.hit) continue;
+			float facing = 1.0f;
+			const float nl = std::sqrt(back.normal.x * back.normal.x + back.normal.y * back.normal.y);
+			if (nl > 0.01f) {
+				// The far face's normal points along the approach (toward the
+				// landing): 1 = head-on, smaller = oblique.
+				facing = std::clamp((a_dir.x * back.normal.x + a_dir.y * back.normal.y) / nl, 0.3f, 1.0f);
+			}
+			const float perp = back.distance * facing;
+			if (perp < clearNeeded) {
+				nudge = std::max(nudge, (clearNeeded - perp) / facing);
+			}
+		}
+		if (nudge > 0.0f) {
+			a_pt.x += a_dir.x * nudge;
+			a_pt.y += a_dir.y * nudge;
+		}
+	}
+
 	// Pin the controller's ENTIRE grounded contract for the whole move.
 	// m_currentState alone proved insufficient (rotation persisted on
 	// pinned grounded moves): the engine also reads surface support,
@@ -436,6 +501,63 @@ namespace F4Parkour
 
 		endPos = vault ? cand.vaultLanding : cand.mantleTarget;
 
+		// RELEASE VAULT: when the far-side ground is a real drop (a balcony,
+		// a wall onto lower ground) the old path glided the player all the
+		// way down to the landing — up to maxVaultDrop — under kNoSim and
+		// pinned grounded: a slow weightless slide, momentum killed at the
+		// bottom. Past a modest step-down, end the curve just past the lip
+		// instead and hand off to the engine's own fall with the arc's
+		// momentum intact, so the player drops and lands naturally.
+		// Detection still guarantees a real landing exists within
+		// maxVaultDrop; physics delivers them to it.
+		releaseVault = false;
+		releaseLandWatchT = 0.0f;  // a new move supersedes any pending landing watch
+		releaseWatchSawAir = false;
+		releaseGroundedTicks = 0;
+		if (vault) {
+			const float kReleaseDescent = Detection::kReleaseDescent;  // authored dip past the lip before letting go
+			// The drop that matters is how far the landing sits BELOW THE
+			// START FEET, not below the lip: on flat ground "lip minus
+			// landing" is just the wall's own height, which released every
+			// wall over 32u (first playtest: 12 of 12 vaults released, none
+			// of them balconies) and the verified grounded hand-off never ran.
+			// Measure from the GROUND under the player, not the player's z: a
+			// vault triggered mid-jump would read the jump height as a drop
+			// and release over a flat-ground wall.
+			float startGroundZ = a_player->data.location.z;
+			bool  releaseAllowed = true;
+			if (startedInAir) {
+				const RE::NiPoint3 feet{ a_player->data.location.x, a_player->data.location.y, a_player->data.location.z };
+				Raycast::RayHit g{};
+				if (Raycast::CastDir(feet, { 0.0f, 0.0f, -1.0f }, 400.0f, g) && g.hit) {
+					startGroundZ = feet.z - g.distance;
+					// A jump that already carried the feet over the obstacle
+					// finds the obstacle's OWN top here, not the ground the
+					// jump left from; that would inflate the drop by the wall's
+					// height. No trustworthy start ground: keep the glide path.
+					if (startGroundZ > cand.vaultLedge.z - 10.0f) {
+						releaseAllowed = false;
+					}
+				}
+				// No ground within 400u: airborne over a real drop, the raw z stands.
+			}
+			const float belowStart = startGroundZ - cand.vaultLanding.z;
+			const float releasePointZ = cand.vaultLedge.z - kReleaseDescent;
+			// The release point must itself sit clear above the real landing:
+			// release gates off every ground-snap net that would catch it.
+			// No floor in reach (or one too deep to glide to): detection already
+			// placed the landing AT the release point. Always release.
+			if (cand.vaultNoFloor ||
+				(releaseAllowed && belowStart > Settings::GetSingleton()->vaultReleaseDrop &&
+				 releasePointZ > cand.vaultLanding.z + 8.0f)) {
+				releaseVault = true;
+				// Keep the landing's x/y (already a capsule radius past the far
+				// edge, so the release point clears the obstacle); descend only
+				// the short dip, not the whole drop.
+				endPos.z = releasePointZ;
+			}
+		}
+
 		// Apex: clearance above the ledge, tightened when the on-top
 		// headroom only fits a crouch (arcing the head into the ceiling
 		// is exactly what the clearance must not do).
@@ -743,6 +865,13 @@ namespace F4Parkour
 					const float dx = hit.point.x - a_ledge.x;
 					const float dy = hit.point.y - a_ledge.y;
 					const float distToLip = std::sqrt(dx * dx + dy * dy);
+					// Past the apex a VAULT is descending onto the far side:
+					// nothing there is the climbed face, so a hit is a real
+					// clip (the far edge corner, a structure behind the wall).
+					if (kind == MoveKind::Vault &&
+						static_cast<float>(i) / 8.0f > apexS + 0.06f) {
+						return false;
+					}
 					if (i <= 6 && distToLip > 45.0f) {
 						return false;  // solid mass mid-path, unrelated to the wall
 					}
@@ -785,6 +914,7 @@ namespace F4Parkour
 
 		preConvertEnd = endPos;
 		endPos = cand.mantleTarget;
+		releaseVault = false;  // landing ON TOP now, not dropping past it
 		endBlend = 0.0f;  // blend endpoints over the next ~0.1s
 		kind = MoveKind::Mantle;
 
@@ -819,17 +949,7 @@ namespace F4Parkour
 		const RE::NiPoint3 preAdjust = adjusted;
 
 		if (kind == MoveKind::Vault) {
-			RE::NiPoint3 probe = adjusted;
-			probe.z += 40.0f;
-			Raycast::RayHit back{};
-			RE::NiPoint3 backDir{ -dir.x, -dir.y, 0.0f };
-			const float clearNeeded = Detection::kCapsuleRadius + 4.0f;
-			Raycast::CastDir(probe, backDir, clearNeeded, back);
-			if (back.hit) {
-				const float nudge = clearNeeded - back.distance;
-				adjusted.x += dir.x * nudge;
-				adjusted.y += dir.y * nudge;
-			}
+			NudgeClearOfFarFace(adjusted, dir);
 		}
 		if (kind == MoveKind::Mantle) {
 			// Back-half support probe: on rounded lips the point one
@@ -848,8 +968,26 @@ namespace F4Parkour
 				adjusted.x += dir.x * 8.0f;
 				adjusted.y += dir.y * 8.0f;
 			}
+			// The nudge must not walk the point off the FAR edge of a small
+			// top (a table, a crate): the ground snap below would then find
+			// the floor beneath the object and drop the player through it.
+			// No support under the nudged point itself: keep the original.
+			if (adjusted.x != preAdjust.x || adjusted.y != preAdjust.y) {
+				RE::NiPoint3 chk = adjusted;
+				chk.z += 20.0f;
+				Raycast::RayHit sup{};
+				Raycast::CastDir(chk, { 0.0f, 0.0f, -1.0f }, 50.0f, sup);
+				if (!sup.hit) {
+					logger::info("[Mover] back-half nudge left the top - keeping the original stand point");
+					adjusted = preAdjust;
+				}
+			}
 		}
-		{
+		// Release vaults skip the landing refinement below: the release point
+		// is IN THE AIR past the lip by design. The 300u down-ray here would
+		// find the deep far-side ground and snap the point onto it, quietly
+		// reintroducing the glide-down that release exists to remove.
+		if (!releaseVault) {
 			RE::NiPoint3 gStart = adjusted;
 			gStart.z += 30.0f;
 			Raycast::RayHit ground{};
@@ -870,7 +1008,7 @@ namespace F4Parkour
 		// ("end the move clipped into the rock"). Nudge forward to the
 		// first spot the full capsule fits — the glide absorbs the shift.
 		// No clear spot within reach keeps the snapped point (status quo).
-		if (!Detection::FootprintClear(adjusted)) {
+		if (!releaseVault && !Detection::FootprintClear(adjusted)) {
 			bool found = false;
 			for (int n = 1; n <= 3 && !found; ++n) {
 				RE::NiPoint3 shifted = adjusted;
@@ -913,8 +1051,16 @@ namespace F4Parkour
 		// capsule clip the overhang for a few frames).
 		if (kind == MoveKind::Mantle && cand.headroom == Headroom::CrouchOnly &&
 			Settings::GetSingleton()->sneakOnCrouchOnly && !earlySneakSent) {
-			earlySneakSent = true;
-			AnimHijack::GetSingleton()->RequestSneak(a_player);
+			earlySneakSent = AnimHijack::GetSingleton()->RequestSneak(a_player);
+		}
+		// Crouch-only VAULT landing: the same rule. Enter sneak at the apex
+		// so the capsule is already crouched when it arrives under the low
+		// ceiling. Not for release vaults - those hand the landing to the
+		// engine's own fall, which owns the crouch decision there.
+		if (kind == MoveKind::Vault && !releaseVault &&
+			cand.vaultHeadroom == Headroom::CrouchOnly &&
+			Settings::GetSingleton()->sneakOnCrouchOnly && !earlySneakSent) {
+			earlySneakSent = AnimHijack::GetSingleton()->RequestSneak(a_player);
 		}
 	}
 
@@ -1257,17 +1403,7 @@ namespace F4Parkour
 		// overlap is what let the depenetration solver throw the player
 		// backwards when simulation resumed.
 		if (kind == MoveKind::Vault) {
-			RE::NiPoint3 probe = endPos;
-			probe.z += 40.0f;  // capsule mid-height
-			Raycast::RayHit back{};
-			RE::NiPoint3 backDir{ -dir.x, -dir.y, 0.0f };
-			const float clearNeeded = Detection::kCapsuleRadius + 4.0f;
-			Raycast::CastDir(probe, backDir, clearNeeded, back);
-			if (back.hit) {
-				const float nudge = clearNeeded - back.distance;
-				endPos.x += dir.x * nudge;
-				endPos.y += dir.y * nudge;
-			}
+			NudgeClearOfFarFace(endPos, dir);
 		}
 
 		// Ground-safety snap: the end point must sit ON verified ground
@@ -1276,7 +1412,10 @@ namespace F4Parkour
 		// ground at all means something went badly wrong — in that case
 		// the start position is the only known-good spot.
 		bool landGrounded = false;
-		{
+		// Release vaults skip the ground snap ON PURPOSE: the whole point is
+		// NOT to be placed on the ground below - the engine's fall delivers
+		// the player there. Snapping here would reintroduce the glide-down.
+		if (!releaseVault) {
 			RE::NiPoint3 gStart = endPos;
 			gStart.z += 30.0f;
 			Raycast::RayHit ground{};
@@ -1303,7 +1442,12 @@ namespace F4Parkour
 		// "landing in mid-air" on every high mantle. Land on the ground
 		// whenever possible; the airborne resolution stays only for the
 		// reverted/no-ground case.
-		if (!startedInAir || landGrounded) {
+		if (releaseVault) {
+			ReleaseToAirborne(a_player);
+			releaseLandWatchT = 4.0f;  // watch the natural landing for a wedged jump state
+			releaseWatchSawAir = false;
+			releaseGroundedTicks = 0;
+		} else if (!startedInAir || landGrounded) {
 			PinGroundedState(a_player);
 		}
 		CameraPivot::Clear(a_player);
@@ -1343,6 +1487,21 @@ namespace F4Parkour
 				SetVelocity(a_player, { 0.0f, 0.0f, -60.0f });
 				logger::info("[Mover] Air-start move - resolving with natural landing");
 			}
+		} else if (!releaseVault) {
+			// A real jump can slip in during the control-handback tail of a
+			// GROUNDED move (the pin still reports on-ground, so the engine
+			// accepts the press); without this the graph ends the move
+			// mid-jump with no fix-up path at all.
+			std::int32_t js = 0;
+			static const RE::BSFixedString kSyncJumpG{ "iSyncJumpState" };
+			a_player->GetGraphVariableImplInt(kSyncJumpG, js);
+			if (js == 1 || js == 2) {
+				static const RE::BSFixedString kJumpLandG{ "jumpLand" };
+				a_player->NotifyAnimationGraphImpl(kJumpLandG);
+				jumpLandRetryT = 1.5f;
+				jumpLandRetryTick = 0.1f;
+				logger::info("[Mover] grounded move ended with a live jump state ({}) - jumpLand fired", js);
+			}
 		}
 
 		if (kind == MoveKind::Vault) {
@@ -1360,12 +1519,20 @@ namespace F4Parkour
 				exitDir.x /= l;
 				exitDir.y /= l;
 			}
+			// Never hand the engine momentum pointed back at the wall just
+			// crossed (looking backward mid-vault): clamp the blend to a
+			// forward cone around the approach direction.
+			if (exitDir.x * dir.x + exitDir.y * dir.y < 0.5f) {
+				exitDir = dir;
+			}
 
 			// Exit-time drop trace (Brink): probe the ground AHEAD along
 			// the exit direction — where the momentum would carry the
 			// player — and clear it when the world falls away.
 			bool dropVeto = false;
-			if (keep > 1.0f) {
+			// Release vaults keep their momentum INTO the fall by design; the
+			// drop trace exists to stop shoving a LANDED player off a cliff.
+			if (!releaseVault && keep > 1.0f) {
 				RE::NiPoint3 aheadStart = {
 					endPos.x + exitDir.x * 50.0f,
 					endPos.y + exitDir.y * 50.0f,
@@ -1380,7 +1547,16 @@ namespace F4Parkour
 				}
 			}
 
-			SetVelocity(a_player, { exitDir.x * keep, exitDir.y * keep, 0.0f });
+			// Release vault: hand off with the curve's own descent so gravity
+			// continues where the arc left off (a zero vertical at the lip
+			// reads as a hitch). Grounded exits stay flat as before.
+			float exitVz = 0.0f;
+			if (releaseVault) {
+				const RE::NiPoint3 nearEnd = SamplePath(0.95f);
+				const float span = std::max(0.02f, 0.05f * duration);
+				exitVz = std::clamp((endPos.z - nearEnd.z) / span, -400.0f, 0.0f);
+			}
+			SetVelocity(a_player, { exitDir.x * keep, exitDir.y * keep, exitVz });
 
 			// Arm the post-move momentum SUSTAIN: the impulse above dies on
 			// the next engine frame (movement re-derives velocity from the
@@ -1399,10 +1575,20 @@ namespace F4Parkour
 			if (!dropVeto && Detection::IsForwardHeld()) {
 				sustainSpeed = std::max(sustainSpeed, 130.0f);
 			}
-			if (sustainSpeed > 40.0f) {
+			if (!releaseVault && sustainSpeed > 40.0f) {
 				exitSustainVel = { exitDir.x * sustainSpeed, exitDir.y * sustainSpeed, 0.0f };
 				exitSustainTotal = 0.35f;
 				exitSustainT = exitSustainTotal;
+			}
+			// Crouch-only VAULT landing: enter sneak if the apex fire was
+			// missed. Release vaults hand the landing to the engine instead.
+			if (!releaseVault && cand.vaultHeadroom == Headroom::CrouchOnly &&
+				settings->sneakOnCrouchOnly && !earlySneakSent) {
+				AnimHijack::GetSingleton()->RequestSneak(a_player);
+			}
+			if (releaseVault) {
+				logger::info("[Mover] Release vault: handed off airborne past the lip (lip drop {:.0f}u, landing {:.0f}u below start) - natural fall",
+					cand.vaultDrop, startPos.z - cand.vaultLanding.z);
 			}
 		} else {
 			SetVelocity(a_player, { 0.0f, 0.0f, 0.0f });
@@ -1419,8 +1605,11 @@ namespace F4Parkour
 		// the named variable is present. Logs once so we can confirm the name
 		// driving the post-mantle fall without spamming.
 		{
+			// Skipped for a release vault: the probe hardcodes the airborne
+			// triplet FALSE, which would undo ReleaseToAirborne if the session's
+			// first finished move is a release. The next grounded move probes.
 			static bool s_probed = false;
-			if (!s_probed) {
+			if (!s_probed && !releaseVault) {
 				s_probed = true;
 				const bool inAir = a_player->SetGraphVariableBool(RE::BSFixedString{ "bInAir" }, false);
 				const bool jumping = a_player->SetGraphVariableBool(RE::BSFixedString{ "bIsJumping" }, false);
@@ -1434,7 +1623,7 @@ namespace F4Parkour
 
 		landingGuardPos = endPos;
 		landingGuardDir = dir;
-		landingGuardValid = true;
+		landingGuardValid = !releaseVault;  // a release vault drops below endPos by design; never rescue it back up
 
 		active = false;
 		phase = MovePhase::Idle;
@@ -1473,6 +1662,58 @@ namespace F4Parkour
 		// the graph leaves them; any other value means the landing is in
 		// progress — stop nudging and let it finish (over-driving the event
 		// through the land state is what restarted the cycle).
+		// Release-vault landing watch: the hand-off left the engine to fly
+		// and land the player on its own. Once the controller is back on
+		// the ground, read the graph's jump state; if it landed wedged in
+		// an airborne state (1 rising / 2 falling = "cannot jump after a
+		// vault"), arm the proven jumpLand retry. Never nudge while still
+		// airborne: over-driving the event through the land state is what
+		// restarts the cycle.
+		if (releaseLandWatchT > 0.0f) {
+			releaseLandWatchT -= a_dt;
+			// The hand-off leaves the controller reading its last pinned
+			// grounded frame, so the very first tick here says "on the
+			// ground" while still at the release point. Wait for the engine
+			// to take the player airborne (or 0.5s, if the release point was
+			// already at the floor), then require consecutive grounded ticks
+			// so a state flicker at a railing or slope cannot spend the check.
+			if (Detection::IsInAir(a_player)) {
+				releaseWatchSawAir = true;
+				releaseGroundedTicks = 0;
+			} else if (releaseWatchSawAir || releaseLandWatchT < 3.5f) {
+				if (++releaseGroundedTicks >= 3) {
+					releaseLandWatchT = 0.0f;
+					std::int32_t js = 0;
+					bool inAir = false, falling = false;
+					static const RE::BSFixedString kSyncJumpW{ "iSyncJumpState" };
+					static const RE::BSFixedString kInAirW{ "bInAir" };
+					static const RE::BSFixedString kFallingW{ "bIsFalling" };
+					a_player->GetGraphVariableImplInt(kSyncJumpW, js);
+					a_player->GetGraphVariableImplBool(kInAirW, inAir);
+					a_player->GetGraphVariableImplBool(kFallingW, falling);
+					logger::info("[Mover] release vault landed (sawAir={}): iSyncJumpState={} bInAir={} bIsFalling={}",
+						releaseWatchSawAir, js, inAir, falling);
+					if (js == 1 || js == 2) {
+						jumpLandRetryT = 1.5f;
+						jumpLandRetryTick = 0.0f;
+					}
+					// The engine chose this landing spot: measure headroom HERE
+					// and crouch if only a crouched capsule fits (detection could
+					// only classify the release point, never the eventual floor).
+					if (Settings::GetSingleton()->sneakOnCrouchOnly) {
+						const RE::NiPoint3 here{ a_player->data.location.x, a_player->data.location.y, a_player->data.location.z };
+						if (Detection::HeadroomAt(here, dir) == Headroom::CrouchOnly) {
+							AnimHijack::GetSingleton()->RequestSneak(a_player);
+							logger::info("[Mover] release vault landed under crouch-only headroom - sneak requested");
+						}
+					}
+				}
+			}
+			if (releaseLandWatchT <= 0.0f && releaseGroundedTicks < 3) {
+				logger::warn("[Mover] release vault: no landing seen within the watch window (sawAir={})", releaseWatchSawAir);
+			}
+		}
+
 		if (jumpLandRetryT <= 0.0f) return;
 		jumpLandRetryT -= a_dt;
 		jumpLandRetryTick -= a_dt;
@@ -1517,6 +1758,7 @@ namespace F4Parkour
 		DebugDraw::GetSingleton()->ClearPath();
 
 		logger::warn("[Mover] Move cancelled");
+		releaseLandWatchT = 0.0f;
 
 		active = false;
 		correctionMode = false;
@@ -1544,6 +1786,7 @@ namespace F4Parkour
 		authored = nullptr;
 		exitSustainT = 0.0f;
 		jumpLandRetryT = 0.0f;
+		releaseLandWatchT = 0.0f;
 		phase = MovePhase::Idle;
 		kind = MoveKind::None;
 		hasLastPos = false;

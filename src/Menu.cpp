@@ -710,6 +710,10 @@ namespace
 		SliderTip("Momentum drop cutoff", &s->momentumDropCutoff, 30.0f, 300.0f, "%.0f",
 			"If the ground past a vault falls away more than this, momentum is cleared "
 			"instead of launching you off the edge.");
+		SliderTip("Vault release drop", &s->vaultReleaseDrop, 30.0f, 200.0f, "%.0f",
+			"If the ground past a vault is lower than where you started by more than this, the vault ends just past the "
+			"lip and hands you to a natural fall with your momentum kept, instead of "
+			"gliding you all the way down. Smaller step-downs still land cleanly.");
 		SliderTip("Control handback", &s->controlHandback, 0.0f, 0.6f, "%.2f",
 			"Final fraction of the move where your keys come back to life (jump can buffer "
 			"the next hop, sprint re-arms) - control returns before the move visually ends "

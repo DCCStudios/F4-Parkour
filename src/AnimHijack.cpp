@@ -433,14 +433,14 @@ namespace F4Parkour
 		// Through Scopes were never disturbed.
 	}
 
-	void AnimHijack::RequestSneak(RE::PlayerCharacter* a_player)
+	bool AnimHijack::RequestSneak(RE::PlayerCharacter* a_player)
 	{
 		// Synthetic Sneak press+release through the engine's own handler —
 		// the only mechanism confirmed (CrouchSlide work) to actually play
 		// the crouch. Never write the sneak bool directly.
 		auto* pc = RE::PlayerControls::GetSingleton();
-		if (!pc || !pc->sneakHandler) return;
-		if (a_player->IsSneaking()) return;
+		if (!pc || !pc->sneakHandler) return false;
+		if (a_player->IsSneaking()) return true;
 
 		auto fill = [](RE::ButtonEvent& a_evt, float a_value, float a_held) {
 			SyntheticInput::InitializeButtonEvent(a_evt);
@@ -462,7 +462,7 @@ namespace F4Parkour
 		using FnHandleButton = void (*)(void*, const RE::ButtonEvent*);
 		uintptr_t vtable = *reinterpret_cast<uintptr_t*>(pc->sneakHandler);
 		auto handle = *reinterpret_cast<FnHandleButton*>(vtable + 8 * sizeof(void*));
-		if (!handle) return;
+		if (!handle) return false;
 
 		RE::ButtonEvent press;
 		fill(press, 1.0f, 0.0f);
@@ -472,5 +472,6 @@ namespace F4Parkour
 		handle(pc->sneakHandler, &release);
 
 		logger::info("[AnimHijack] Crouch-only mantle - synthetic sneak dispatched");
+		return true;
 	}
 }

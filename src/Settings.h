@@ -85,6 +85,7 @@ namespace F4Parkour
 		float vaultSpeedMatch{ 0.5f };      // 0 = tier time always, 1 = full speed-match
 		float exitDirBlend{ 0.5f };         // approach dir -> current input dir
 		float momentumDropCutoff{ 100.0f }; // zero momentum when landing drop exceeds
+		float vaultReleaseDrop{ 40.0f };    // landing this far BELOW THE START FEET: the vault hands off to a natural fall instead of gliding down
 		float controlHandback{ 0.25f };     // final fraction of move with input live
 		bool  sneakOnCrouchOnly{ true };    // force sneak after crouch-headroom mantles
 

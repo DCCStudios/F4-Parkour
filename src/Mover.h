@@ -113,9 +113,13 @@ namespace F4Parkour
 		bool         hasLastPos{ false };
 		bool         earlySneakSent{ false };
 		bool         startedInAir{ false };  // real jump anim is playing
+		bool         releaseVault{ false };  // deep far-side drop: curve ends past the lip, hand off to a natural fall
 		bool         jumpLandFired{ false }; // one-shot graph "jumpLand" per move
 		float        jumpLandRetryT{ 0.0f };    // post-move nudge window (air starts)
 		float        jumpLandRetryTick{ 0.0f };
+		float        releaseLandWatchT{ 0.0f };   // release vault: seconds left to watch for the natural landing
+		bool         releaseWatchSawAir{ false };  // the engine took the player airborne after the hand-off
+		int          releaseGroundedTicks{ 0 };    // consecutive grounded ticks seen by the watch
 		// Vault-exit momentum SUSTAIN: a single velocity impulse at Finish
 		// dies on the next engine frame (movement re-derives velocity from
 		// the input state), which read as a full stop. For a short window

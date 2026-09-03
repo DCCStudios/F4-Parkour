@@ -57,6 +57,7 @@ namespace F4Parkour
 		vaultSpeedMatch    = getF("Movement", "fVaultSpeedMatch", vaultSpeedMatch);
 		exitDirBlend       = getF("Movement", "fExitDirectionBlend", exitDirBlend);
 		momentumDropCutoff = getF("Movement", "fMomentumDropCutoff", momentumDropCutoff);
+		vaultReleaseDrop   = getF("Movement", "fVaultReleaseDrop", vaultReleaseDrop);
 		controlHandback    = getF("Movement", "fControlHandbackFraction", controlHandback);
 		sneakOnCrouchOnly  = getB("Movement", "bSneakOnCrouchOnlyMantle", sneakOnCrouchOnly);
 
@@ -99,6 +100,7 @@ namespace F4Parkour
 		momentumKeep        = std::clamp(momentumKeep, 0.0f, 1.5f);
 		vaultSpeedMatch     = std::clamp(vaultSpeedMatch, 0.0f, 1.0f);
 		exitDirBlend        = std::clamp(exitDirBlend, 0.0f, 1.0f);
+		vaultReleaseDrop    = std::clamp(vaultReleaseDrop, 30.0f, 200.0f);
 		controlHandback     = std::clamp(controlHandback, 0.0f, 0.6f);
 		maxApproachAngleDeg = std::clamp(maxApproachAngleDeg, 10.0f, 90.0f);
 		moverTimeScale      = std::clamp(moverTimeScale, 0.05f, 1.0f);
@@ -162,6 +164,7 @@ namespace F4Parkour
 		setF("Movement", "fVaultSpeedMatch", vaultSpeedMatch);
 		setF("Movement", "fExitDirectionBlend", exitDirBlend);
 		setF("Movement", "fMomentumDropCutoff", momentumDropCutoff);
+		setF("Movement", "fVaultReleaseDrop", vaultReleaseDrop);
 		setF("Movement", "fControlHandbackFraction", controlHandback);
 		setB("Movement", "bSneakOnCrouchOnlyMantle", sneakOnCrouchOnly);
 

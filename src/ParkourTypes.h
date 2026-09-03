@@ -39,6 +39,8 @@ namespace F4Parkour
 		float        vaultTopDepth{ 0.0f };
 		RE::NiPoint3 vaultLanding{};    // far-side ground point
 		float        vaultDrop{ 0.0f }; // ledge top -> far-side ground
+		Headroom     vaultHeadroom{ Headroom::None }; // over the landing: CrouchOnly -> the Mover crouches the player on arrival
+		bool         vaultNoFloor{ false };  // no floor in reach (or too deep to glide to): the landing IS the release point, always release
 
 		// ---- mantle (up on top) ----
 		bool         mantleEligible{ false };

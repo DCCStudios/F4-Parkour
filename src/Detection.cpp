@@ -125,7 +125,13 @@ namespace
 	// step past it, each with lateral offsets) so a beam or overhang
 	// BETWEEN two thin rays can no longer slip through, plus a safety
 	// margin over the crouched capsule height.
-	Headroom MeasureHeadroom(const RE::NiPoint3& a_lip, const RE::NiPoint3& a_top, const RE::NiPoint3& a_dir)
+	// Vault landings pass an embed tolerance: a hit closer than this means
+	// the probe STARTED inside geometry (a raised curb or slope under an
+	// off-centre ray, all rows share the landing's z). No real ceiling sits
+	// that low over a landing a clean down-ray just found.
+	constexpr float kLandingEmbedTolerance = 8.0f;
+	Headroom MeasureHeadroom(const RE::NiPoint3& a_lip, const RE::NiPoint3& a_top, const RE::NiPoint3& a_dir,
+		float a_embedTolerance = 0.0f)
 	{
 		const RE::NiPoint3 up{ 0.0f, 0.0f, 1.0f };
 		const RE::NiPoint3 side{ a_dir.y, -a_dir.x, 0.0f };
@@ -143,7 +149,8 @@ namespace
 				start.z = a_top.z + 5.0f;
 				Raycast::RayHit hit{};
 				Raycast::CastDir(start, up, Detection::kPlayerHeight, hit);
-				const float c = hit.hit ? hit.distance : Detection::kPlayerHeight;
+				const bool embedded = hit.hit && hit.distance < a_embedTolerance;
+				const float c = (hit.hit && !embedded) ? hit.distance : Detection::kPlayerHeight;
 				DbgRay(start, up, Detection::kPlayerHeight, hit,
 					c >= Detection::kCrouchHeight + kCrouchMargin, "head");
 				clearance = std::min(clearance, c);
@@ -155,12 +162,117 @@ namespace
 		return Headroom::None;
 	}
 
+	bool SegmentClear(const RE::NiPoint3& a_from, const RE::NiPoint3& a_to, const char* a_label)
+	{
+		const RE::NiPoint3 d{ a_to.x - a_from.x, a_to.y - a_from.y, a_to.z - a_from.z };
+		const float len = std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
+		if (len <= 1.0f) return true;
+		Raycast::RayHit hit{};
+		const bool blocked = Raycast::Cast(a_from, a_to, hit) && hit.hit;
+		DbgRay(a_from, { d.x / len, d.y / len, d.z / len }, len, hit, !blocked, a_label);
+		return !blocked;
+	}
+
+	enum class Corridor { Clear, Blocked, NoFloor };
+
+	// FAR-SIDE CORRIDOR from PROVEN-FREE origins. Every far-side probe (the
+	// landing down-ray from lip-2, the back-clearance ray, the headroom
+	// grid) ORIGINATES past the far edge at or below lip level, exactly
+	// where a second, taller structure would stand. Rays that start inside
+	// collision report nothing, so a low wall flush against a building read
+	// as "landing on the floor inside the building" and the vault passed
+	// THROUGH the wall. Every origin here is a point an earlier ray passed
+	// through: the over-the-top check proved 5..65u above the lip, and the
+	// sweep's own down-ray passed through the air 5u above the LAST TOP
+	// SAMPLE (still on the obstacle, never past its face, so it cannot be
+	// inside a structure flush behind it).
+	//   Leg 1, level at lip+50 from the lip to over the landing: anything
+	//          taller than the vault's own crossing.
+	//   Leg 2a, level at lip+5 from the last top sample to just past the
+	//          far face: a wall flush behind the obstacle, of ANY height
+	//          above the top, crosses this line. Nothing descends until
+	//          this has proven the air past the face.
+	//   Leg 2b, descending from that proven point to chest height at the
+	//          landing: a structure set back behind the obstacle.
+	//   Leg 3 (floor known), straight down onto the floor from over the
+	//          landing: mass sitting on or just over the landing. A hit
+	//          high enough to crouch under is an awning (legs 2a/2b proved
+	//          the space beneath); MeasureHeadroom then rules on the exact
+	//          headroom. A floor that cannot be confirmed from free air
+	//          returns NoFloor so the caller can fall back to a release.
+	//   Release column (no floor), from over the landing down to 10u below
+	//          the release point: nothing may sit in the column the player
+	//          drops through. The fall itself is the engine's business.
+	Corridor FarSideCorridorClear(const RE::NiPoint3& a_lip, const RE::NiPoint3& a_lastTop,
+		const RE::NiPoint3& a_pastEdge, const RE::NiPoint3& a_landing, const char** a_why, bool a_floorKnown)
+	{
+		constexpr float kLift = 50.0f;
+		constexpr float kSkim = 5.0f;    // the over-the-top / sweep rays proved this height
+		constexpr float kChest = 40.0f;  // the height the back-clearance ray already uses
+		const RE::NiPoint3 origin{ a_lip.x, a_lip.y, a_lip.z + kLift };
+		const RE::NiPoint3 overLanding{ a_landing.x, a_landing.y, a_lip.z + kLift };
+		if (!SegmentClear(origin, overLanding, "far corridor")) {
+			*a_why = "solid mass between the lip and the landing (would vault through it)";
+			return Corridor::Blocked;
+		}
+		const RE::NiPoint3 topSkim{ a_lastTop.x, a_lastTop.y, a_lip.z + kSkim };
+		const RE::NiPoint3 pastEdge{ a_pastEdge.x, a_pastEdge.y, a_lip.z + kSkim };
+		if (!SegmentClear(topSkim, pastEdge, "far edge skim")) {
+			*a_why = "solid mass flush behind the obstacle (would vault into it)";
+			return Corridor::Blocked;
+		}
+		const RE::NiPoint3 chest{ a_landing.x, a_landing.y, a_landing.z + kChest };
+		if (!SegmentClear(pastEdge, chest, "far descent")) {
+			*a_why = "solid mass behind the obstacle (would vault into it)";
+			return Corridor::Blocked;
+		}
+		if (!a_floorKnown) {
+			// The column is checked over the capsule's FOOTPRINT (centre plus
+			// a ring just inside the capsule radius), the same idea as
+			// FootprintClear for floor landings: a railing post or ledge
+			// trim beside the release point is exactly what a single
+			// centre ray misses, and this is the geometry release vaults
+			// live on.
+			constexpr float kRingR = Detection::kCapsuleRadius - 3.0f;
+			for (int i = -1; i < 6; ++i) {
+				const float ang = static_cast<float>(i) * 1.0471976f;  // 60 deg
+				const float ox = i < 0 ? 0.0f : std::cos(ang) * kRingR;
+				const float oy = i < 0 ? 0.0f : std::sin(ang) * kRingR;
+				const RE::NiPoint3 top{ a_landing.x + ox, a_landing.y + oy, a_lip.z + kLift };
+				const RE::NiPoint3 below{ a_landing.x + ox, a_landing.y + oy, a_landing.z - 10.0f };
+				if (!SegmentClear(top, below, i < 0 ? "release column" : nullptr)) {
+					*a_why = "solid mass in the release column (would drop onto it)";
+					return Corridor::Blocked;
+				}
+			}
+			return Corridor::Clear;
+		}
+		const RE::NiPoint3 floor{ a_landing.x, a_landing.y, a_landing.z - 6.0f };
+		Raycast::RayHit drop{};
+		Raycast::Cast(overLanding, floor, drop);
+		const float surfaceZ = drop.hit ? overLanding.z - drop.distance : -1.0e9f;
+		const bool ok = drop.hit &&
+			(surfaceZ <= a_landing.z + 12.0f ||
+			 surfaceZ >= a_landing.z + Detection::kCrouchHeight + 6.0f);
+		DbgRay(overLanding, { 0.0f, 0.0f, -1.0f }, overLanding.z - floor.z, drop, ok, "far floor");
+		if (!drop.hit) {
+			*a_why = "landing floor not reachable from free air";
+			return Corridor::NoFloor;
+		}
+		if (!ok) {
+			*a_why = "solid mass on the landing (would vault into it)";
+			return Corridor::NoFloor;
+		}
+		return Corridor::Clear;
+	}
+
 	// Approach-angle clamp (Dying Light: climb along the player's forward
 	// vector; reject approaches too oblique to land). Probes the wall
 	// face below the ledge lip; a missing face (thin railing) skips the
 	// clamp rather than failing it.
 	bool ApproachAngleOK(const RE::NiPoint3& a_playerPos, const RE::NiPoint3& a_dir,
-		const RE::NiPoint3& a_ledge, float a_minHeightAboveFeet)
+		const RE::NiPoint3& a_ledge, float a_minHeightAboveFeet,
+		float* a_facingOut = nullptr, const char* a_what = "mantle")
 	{
 		auto* settings = Settings::GetSingleton();
 
@@ -181,9 +293,10 @@ namespace
 		if (nl < 0.01f) return true;
 		n = Mul(n, 1.0f / nl);
 		const float facing = -(a_dir.x * n.x + a_dir.y * n.y);  // 1 = head-on
+		if (a_facingOut) *a_facingOut = facing;
 		const float minFacing = std::cos(settings->maxApproachAngleDeg * 3.14159265f / 180.0f);
 		if (facing < minFacing) {
-			DbgReject("mantle", "approach too oblique ({:.0f} deg)",
+			DbgReject(a_what, "approach too oblique ({:.0f} deg)",
 				std::acos(std::clamp(facing, -1.0f, 1.0f)) * 180.0f / 3.14159265f);
 			return false;
 		}
@@ -240,6 +353,7 @@ namespace
 		float landingHeight = 10000.0f;
 		int   landingIdx = -1;
 		int   tooHighRun = 0;
+		int   missRunAfterTop = 0;
 		RE::NiPoint3 ledgePoint{};
 
 		for (int i = 0; i < kSweepIterations; ++i) {
@@ -251,8 +365,17 @@ namespace
 			Raycast::CastDir(start, down, sweepDepth, hit);
 			if (!hit.hit) {
 				DbgRay(start, down, sweepDepth, hit, true, nullptr);
+				// Past the obstacle, a run of misses means the far side
+				// drops beyond the sweep's reach: the release-vault shape
+				// (a balcony, a wall onto much lower ground). After 30u of
+				// open air stop the sweep, so a second structure farther
+				// out cannot merge into this obstacle's top across the
+				// chasm. Shorter gaps (a post gap between fence panels)
+				// keep the old merge behaviour.
+				if (foundTop && ++missRunAfterTop >= 6) break;
 				continue;
 			}
+			missRunAfterTop = 0;
 
 			const float hitHeight = (start.z - hit.distance) - playerPos.z;
 
@@ -314,10 +437,12 @@ namespace
 		}
 
 		if (!foundTop) return;  // nothing vaultable in front (common case, no log)
-		if (!foundLanding || landingIdx < 0) {
-			DbgReject("vault", "no far-side landing within sweep");
-			return;
-		}
+		// NO FLOOR IN REACH is not a rejection: it is the balcony shape. The
+		// vault crosses the obstacle and RELEASES the player into the
+		// engine's own fall just past the lip; the far side only has to be
+		// open air (corridor, headroom, release column below). The landing
+		// point then IS the release point.
+		bool noFloor = !foundLanding || landingIdx < 0;
 
 		const float topDepth = static_cast<float>(lastTopIdx - firstTopIdx + 1) * kSweepStep;
 		ledgePoint.z = playerPos.z + topHeight;
@@ -349,6 +474,18 @@ namespace
 			}
 		}
 
+		// Approach angle against the near face, and the OBLIQUENESS SCALE for
+		// every far-side margin: the sweep and the landing offset both run
+		// along the approach direction, so at 45 degrees a 24u margin along
+		// the ray is only 17u perpendicular to the face, inside the 16u
+		// capsule. Scale the margins by 1/cos so the PERPENDICULAR clearance
+		// stays what the numbers say.
+		float facing = 1.0f;
+		if (!ApproachAngleOK(playerPos, a_dir, ledgePoint, settings->minVaultHeight, &facing, "vault")) {
+			return;
+		}
+		const float obliqueScale = 1.0f / std::max(facing, 0.6f);
+
 		// 3. Landing validation (the "behind the object" rules). The
 		// landing point sits a full capsule radius + margin past the far
 		// edge — landing at the first clear ray put the 16-unit capsule
@@ -358,10 +495,14 @@ namespace
 		const float farEdgeDist = static_cast<float>(lastTopIdx + 1) * kSweepStep;
 		const float landingDist = std::max(
 			static_cast<float>(landingIdx) * kSweepStep,
-			farEdgeDist + Detection::kCapsuleRadius + 8.0f);
+			farEdgeDist + (Detection::kCapsuleRadius + 8.0f) * obliqueScale);
 		RE::NiPoint3 landing = Add(playerPos, Mul(a_dir, landingDist));
 		landing.z = playerPos.z + landingHeight;
-		{
+		if (noFloor) {
+			landing.z = ledgePoint.z - Detection::kReleaseDescent;
+			landingHeight = landing.z - playerPos.z;
+		}
+		if (!noFloor) {
 			// Ground height at the margined point (the sweep measured it
 			// closer in; re-measure where the player will actually stand).
 			RE::NiPoint3 lStart = landing;
@@ -375,18 +516,30 @@ namespace
 			}
 		}
 
-		const float drop = ledgePoint.z - landing.z;
-		if (drop > settings->maxVaultDrop) {
-			DbgReject("vault", "far-side drop {:.0f} exceeds {:.0f}", drop, settings->maxVaultDrop);
-			return;
+		float drop = ledgePoint.z - landing.z;
+		if (!noFloor && drop > settings->maxVaultDrop) {
+			// Too deep to glide to: release over it instead.
+			noFloor = true;
+			landing.z = ledgePoint.z - Detection::kReleaseDescent;
+			drop = ledgePoint.z - landing.z;
+			landingHeight = landing.z - playerPos.z;
 		}
-		if (landingHeight > 80.0f) {
+		if (!noFloor && landingHeight > 80.0f) {
 			DbgReject("vault", "far side rises {:.0f} above start", landingHeight);
 			return;
 		}
 		if (BelowWater(a_player, landing)) {
-			DbgReject("vault", "landing is underwater");
-			return;
+			if (!noFloor) {
+				// Fall into the water rather than glide into it pinned grounded.
+				noFloor = true;
+				landing.z = ledgePoint.z - Detection::kReleaseDescent;
+				drop = ledgePoint.z - landing.z;
+				landingHeight = landing.z - playerPos.z;
+			}
+			if (BelowWater(a_player, landing)) {
+				DbgReject("vault", "release point is underwater");
+				return;
+			}
 		}
 
 		// FOOTPRINT: the thin rays above accepted this landing, but the
@@ -394,7 +547,8 @@ namespace
 		// while the capsule overlaps a bulge ("end the vault clipped into
 		// the rock"). Step the landing forward until the full footprint
 		// fits; if it never does, this is not a landing.
-		{
+		const RE::NiPoint3 landingBase = landing;
+		if (!noFloor) {
 			int fpTries = 0;
 			while (!Detection::FootprintClear(landing) && ++fpTries <= 3) {
 				landing.x += a_dir.x * 10.0f;
@@ -407,38 +561,13 @@ namespace
 				}
 			}
 			if (fpTries > 3) {
-				DbgReject("vault", "landing footprint blocked (rock bulge)");
-				return;
-			}
-		}
-
-		// Back clearance: room for the capsule past the far edge, checked
-		// at crouch height above the landing.
-		{
-			RE::NiPoint3 clrStart = Add(playerPos, Mul(a_dir, static_cast<float>(lastTopIdx + 1) * kSweepStep));
-			clrStart.z = landing.z + 40.0f;
-			Raycast::RayHit clr{};
-			Raycast::CastDir(clrStart, a_dir, settings->minBackClearance, clr);
-			DbgRay(clrStart, a_dir, settings->minBackClearance, clr, !clr.hit, "back clr");
-			if (clr.hit) {
-				DbgReject("vault", "blocked {:.0f} past far edge ({})",
-					clr.distance, Raycast::LayerName(clr.layer));
-				return;
-			}
-		}
-
-		// Headroom AT the landing point (never vault INTO an object): the
-		// back-clearance ray above covers the frontal corridor, but nothing
-		// verified vertical space where the capsule actually arrives — an
-		// overhanging shelf/beam over the landing would embed the player.
-		{
-			RE::NiPoint3 lhStart = Add(landing, RE::NiPoint3{ 0.0f, 0.0f, 5.0f });
-			Raycast::RayHit lh{};
-			Raycast::CastDir(lhStart, up, Detection::kCrouchHeight, lh);
-			DbgRay(lhStart, up, Detection::kCrouchHeight, lh, !lh.hit, "land head");
-			if (lh.hit) {
-				DbgReject("vault", "no headroom at the landing ({:.0f}u above)", lh.distance);
-				return;
+				// The capsule never fits on that floor: release over it and
+				// let physics settle the player wherever it lands.
+				noFloor = true;
+				landing = landingBase;
+				landing.z = ledgePoint.z - Detection::kReleaseDescent;
+				drop = ledgePoint.z - landing.z;
+				landingHeight = landing.z - playerPos.z;
 			}
 		}
 
@@ -473,12 +602,72 @@ namespace
 			}
 		}
 
+		// Far-side corridor from proven-free air. Runs LAST on purpose: the
+		// rail check above just proved 5..65u over the lip, so every origin
+		// it casts from has been verified by the time it runs.
+		{
+			// Last top sample (the sweep proved the air above it) and a point
+			// 8u past the true far face ((lastTopIdx + 1) * step, the same
+			// convention the landing margin uses).
+			const RE::NiPoint3 lastTop = Add(playerPos, Mul(a_dir, static_cast<float>(lastTopIdx) * kSweepStep));
+			const RE::NiPoint3 pastEdge = Add(playerPos, Mul(a_dir, static_cast<float>(lastTopIdx + 1) * kSweepStep + 8.0f));
+			const char* why = nullptr;
+			Corridor c = FarSideCorridorClear(ledgePoint, lastTop, pastEdge, landing, &why, !noFloor);
+			if (c == Corridor::NoFloor) {
+				// The floor could not be confirmed from free air: release over
+				// the obstacle instead of gliding to it.
+				noFloor = true;
+				landing = landingBase;
+				landing.z = ledgePoint.z - Detection::kReleaseDescent;
+				drop = ledgePoint.z - landing.z;
+				landingHeight = landing.z - playerPos.z;
+				c = FarSideCorridorClear(ledgePoint, lastTop, pastEdge, landing, &why, false);
+			}
+			if (c != Corridor::Clear) {
+				DbgReject("vault", "{}", why);
+				return;
+			}
+		}
+
+		// Back clearance: room for the capsule past the far edge, checked
+		// at crouch height above the landing or the release point. Runs
+		// after the corridor so a late no-floor conversion is measured at
+		// the release height, not the deep floor.
+		{
+			RE::NiPoint3 clrStart = Add(playerPos, Mul(a_dir, static_cast<float>(lastTopIdx + 1) * kSweepStep));
+			clrStart.z = landing.z + 40.0f;
+			Raycast::RayHit clr{};
+			Raycast::CastDir(clrStart, a_dir, settings->minBackClearance, clr);
+			DbgRay(clrStart, a_dir, settings->minBackClearance, clr, !clr.hit, "back clr");
+			if (clr.hit) {
+				DbgReject("vault", "blocked {:.0f} past far edge ({})",
+					clr.distance, Raycast::LayerName(clr.layer));
+				return;
+			}
+		}
+
+		// Headroom AT the landing, or at the release point for a no-floor
+		// vault (never vault INTO an object), classified
+		// Stand / CrouchOnly / None over the whole capsule footprint with the
+		// mantle's 3x3 grid instead of one centre ray, so an overhang offset
+		// from the landing centre cannot slip through. CrouchOnly is ALLOWED
+		// and recorded on the candidate: the Mover crouches the player as it
+		// lands, exactly like a crouch-only mantle.
+		const Headroom landHeadroom = MeasureHeadroom(
+			Add(landing, Mul(a_dir, -10.0f)), landing, a_dir, kLandingEmbedTolerance);
+		if (landHeadroom == Headroom::None) {
+			DbgReject("vault", "no headroom at the landing (not even crouched)");
+			return;
+		}
+
 		a_out.vaultEligible = true;
 		a_out.vaultLedge = ledgePoint;
 		a_out.vaultHeight = topHeight;
 		a_out.vaultTopDepth = topDepth;
 		a_out.vaultLanding = landing;
-		a_out.vaultDrop = drop;
+		a_out.vaultDrop = ledgePoint.z - landing.z;
+		a_out.vaultNoFloor = noFloor;
+		a_out.vaultHeadroom = landHeadroom;
 
 		if (settings->debugEnabled) {
 			DebugDraw::GetSingleton()->AddMarker(ledgePoint, 0xFF00E060, "vault ledge");
@@ -641,7 +830,8 @@ namespace
 			}
 
 			// Approach angle against the wall face under the lip.
-			if (!ApproachAngleOK(playerPos, a_dir, ledgePoint, minLedgeHeight)) {
+			float mantleFacing = 1.0f;
+			if (!ApproachAngleOK(playerPos, a_dir, ledgePoint, minLedgeHeight, &mantleFacing)) {
 				continue;
 			}
 
@@ -690,42 +880,63 @@ namespace
 					Raycast::CastDir(overStart, upv, 60.0f, over);
 					if (!over.hit) {
 						// Far-side ground, margined a full capsule past the wall.
-						const float pastWall = std::max(topDepth, 4.0f) + Detection::kCapsuleRadius + 12.0f;
+						// Margin scaled by the approach obliqueness (see VaultScan).
+						const float pastWall = std::max(topDepth, 4.0f) + (Detection::kCapsuleRadius + 12.0f) / std::max(mantleFacing, 0.6f);
 						RE::NiPoint3 landing = Add(ledgePoint, Mul(a_dir, pastWall));
 						landing.z = ledgePoint.z - 2.0f;
 						Raycast::RayHit lg{};
 						Raycast::CastDir(landing, downv, settings->maxVaultDrop + 20.0f, lg);
+						// No floor in reach, or one too deep to glide to: a RELEASE
+						// vault over the wall into the engine's own fall. The landing
+						// then IS the release point just past the lip.
+						bool fenceNoFloor = !lg.hit;
 						if (lg.hit) {
 							landing.z = (ledgePoint.z - 2.0f) - lg.distance;
-							const float fenceDrop = ledgePoint.z - landing.z;
-							const float landRise = landing.z - playerPos.z;
-							// Headroom AT the landing (never vault INTO an object).
-							RE::NiPoint3 lHeadStart = Add(landing, RE::NiPoint3{ 0.0f, 0.0f, 5.0f });
-							Raycast::RayHit lHead{};
-							Raycast::CastDir(lHeadStart, upv, Detection::kCrouchHeight, lHead);
-							// Back clearance for the capsule past the wall.
-							RE::NiPoint3 clrStart = Add(ledgePoint, Mul(a_dir, std::max(topDepth, 4.0f)));
-							clrStart.z = landing.z + 40.0f;
-							Raycast::RayHit clr{};
-							Raycast::CastDir(clrStart, a_dir, settings->minBackClearance, clr);
-							if (fenceDrop >= 25.0f && fenceDrop <= settings->maxVaultDrop &&
-								landRise <= 80.0f && !lHead.hit && !clr.hit &&
-								!BelowWater(a_player, landing) &&
-								Detection::FootprintClear(landing)) {
-								a_out.vaultEligible = true;
-								a_out.vaultLedge = ledgePoint;
-								a_out.vaultHeight = relHeight;
-								a_out.vaultTopDepth = topDepth;
-								a_out.vaultLanding = landing;
-								a_out.vaultDrop = fenceDrop;
-								if (settings->debugEnabled) {
-									DebugDraw::GetSingleton()->AddMarker(ledgePoint, 0xFF00E060, "fence vault");
-									DebugDraw::GetSingleton()->AddMarker(landing, 0xFFFFB020, "landing");
-									DebugDraw::GetSingleton()->Event(std::format(
-										"thin-wall vault accepted: h={:.0f} depth={:.0f} drop={:.0f}",
-										relHeight, topDepth, fenceDrop));
-								}
+							if (ledgePoint.z - landing.z > settings->maxVaultDrop) fenceNoFloor = true;
+						}
+						if (fenceNoFloor) landing.z = ledgePoint.z - Detection::kReleaseDescent;
+						// Back clearance for the capsule past the wall.
+						RE::NiPoint3 clrStart = Add(ledgePoint, Mul(a_dir, std::max(topDepth, 4.0f)));
+						clrStart.z = landing.z + 40.0f;
+						Raycast::RayHit clr{};
+						Raycast::CastDir(clrStart, a_dir, settings->minBackClearance, clr);
+						const char* fenceWhy = nullptr;
+						const RE::NiPoint3 fencePastEdge = Add(ledgePoint, Mul(a_dir, std::max(topDepth, 4.0f) + 8.0f));
+						Corridor fc = FarSideCorridorClear(ledgePoint, ledgePoint, fencePastEdge, landing, &fenceWhy, !fenceNoFloor);
+						if (fc == Corridor::NoFloor) {
+							fenceNoFloor = true;
+							landing.z = ledgePoint.z - Detection::kReleaseDescent;
+							fc = FarSideCorridorClear(ledgePoint, ledgePoint, fencePastEdge, landing, &fenceWhy, false);
+							if (fc == Corridor::Clear) fenceWhy = nullptr;
+						}
+						const float fenceDrop = ledgePoint.z - landing.z;
+						const float landRise = landing.z - playerPos.z;
+						// Headroom AT the landing or the release point (never vault
+						// INTO an object), classified over the capsule footprint;
+						// CrouchOnly is allowed and the Mover crouches the player.
+						const Headroom fenceHeadroom = MeasureHeadroom(
+							Add(landing, Mul(a_dir, -10.0f)), landing, a_dir, kLandingEmbedTolerance);
+						const bool floorOK = fenceNoFloor ||
+							(fenceDrop >= 25.0f && landRise <= 80.0f && Detection::FootprintClear(landing));
+						if (fc == Corridor::Clear && floorOK && fenceHeadroom != Headroom::None && !clr.hit &&
+							!BelowWater(a_player, landing)) {
+							a_out.vaultEligible = true;
+							a_out.vaultLedge = ledgePoint;
+							a_out.vaultHeight = relHeight;
+							a_out.vaultTopDepth = topDepth;
+							a_out.vaultLanding = landing;
+							a_out.vaultDrop = fenceDrop;
+							a_out.vaultHeadroom = fenceHeadroom;
+							a_out.vaultNoFloor = fenceNoFloor;
+							if (settings->debugEnabled) {
+								DebugDraw::GetSingleton()->AddMarker(ledgePoint, 0xFF00E060, "fence vault");
+								DebugDraw::GetSingleton()->AddMarker(landing, 0xFFFFB020, fenceNoFloor ? "release" : "landing");
+								DebugDraw::GetSingleton()->Event(std::format(
+									"thin-wall vault accepted: h={:.0f} depth={:.0f} drop={:.0f}{}",
+									relHeight, topDepth, fenceDrop, fenceNoFloor ? " (no floor: release)" : ""));
 							}
+						} else if (fenceWhy) {
+							DbgReject("vault", "thin wall: {}", fenceWhy);
 						}
 					}
 				}
@@ -851,6 +1062,11 @@ namespace F4Parkour::Detection
 			       s == RE::hknpCharacterState::hknpCharacterStateType::kJumping;
 		}
 		return false;
+	}
+
+	Headroom HeadroomAt(const RE::NiPoint3& a_pos, const RE::NiPoint3& a_dir)
+	{
+		return MeasureHeadroom(Add(a_pos, Mul(a_dir, -10.0f)), a_pos, a_dir, kLandingEmbedTolerance);
 	}
 
 	bool IsSighted(RE::PlayerCharacter* a_player)
